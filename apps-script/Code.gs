@@ -21,22 +21,23 @@ function doGet(e) {
   const action = (e.parameter && e.parameter.action) || '';
   let data = null;
   if (e.parameter && e.parameter.data) {
-    try { data = JSON.parse(e.parameter.data); } catch(_) {}
+    try {
+      if (e.parameter.enc === 'b64') {
+        // Decode base64 + UTF-8
+        const decoded = decodeURIComponent(escape(Utilities.base64Decode(
+          e.parameter.data, Utilities.Charset.UTF_8
+        ).map(b => String.fromCharCode(b)).join('')));
+        data = JSON.parse(decoded);
+      } else {
+        data = JSON.parse(e.parameter.data);
+      }
+    } catch(err) { data = null; }
   }
   return handleRequest(action, data);
 }
 
-function doPost(e) {
-  // Accept action from URL param (survives redirect) and data from body.
-  // Content-Type: text/plain avoids CORS preflight and body survives redirect.
-  const action = (e.parameter && e.parameter.action) || '';
-  let data = null;
-  try {
-    const body = JSON.parse(e.postData.contents);
-    data = body.data || body;
-  } catch(_) {}
-  return handleRequest(action, data);
-}
+// Keep doPost as alias in case of future use
+function doPost(e) { return doGet(e); }
 
 function handleRequest(action, data) {
   let result = {};
