@@ -17,25 +17,42 @@ const DEFAULT_CATS = [
 ];
 const DEFAULT_LIMITS = [15000,3000,1500,20000,8000,5000,5000,3000,4000,5000,3000,3000,2000,4000,5000,5000];
 
-function doGet(e)  { return handleRequest(e.parameter.action, e.parameter); }
-function doPost(e) {
-  let body = {};
-  try { body = JSON.parse(e.postData.contents); } catch(_) {}
-  return handleRequest(body.action, body);
+function doGet(e) {
+  // action can come from URL param (?action=ping) or from JSON body via ?action=
+  const action = (e.parameter && e.parameter.action) || '';
+  let data = null;
+  if (e.parameter && e.parameter.data) {
+    try { data = JSON.parse(e.parameter.data); } catch(_) {}
+  }
+  return handleRequest(action, data);
 }
-function handleRequest(action, params) {
+
+function doPost(e) {
+  // Apps Script loses POST body through redirects, so we ALSO accept action via URL param.
+  // Priority: URL param > JSON body
+  const urlAction = (e.parameter && e.parameter.action) || '';
+  let body = {};
+  try { body = JSON.parse(e.postData && e.postData.contents || '{}'); } catch(_) {}
+  const action = urlAction || body.action || '';
+  const data = (e.parameter && e.parameter.data)
+    ? JSON.parse(e.parameter.data)
+    : (body.data || body);
+  return handleRequest(action, data);
+}
+
+function handleRequest(action, data) {
   let result = {};
   try {
-    if      (action === 'ping') result = { ok: true, version: '8.0' };
+    if      (action === 'ping') result = { ok: true, version: '8.1' };
     else if (action === 'pull') result = pullData();
     else if (action === 'push') {
-      const data = typeof params.data === 'string' ? JSON.parse(params.data) : params.data;
-      pushData(data);
+      const payload = (typeof data === 'string') ? JSON.parse(data) : data;
+      pushData(payload);
       result = { success: true };
     }
-    else result = { error: 'Unknown action: ' + action };
+    else result = { error: 'Unknown action: "' + action + '". Valid: ping, pull, push' };
   } catch(err) {
-    result = { error: err.message };
+    result = { error: err.message, stack: err.stack };
   }
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);

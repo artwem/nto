@@ -88,9 +88,9 @@ function autoSyncOnClose(){
   // sendBeacon with POST body — most reliable on page close
   if(navigator.sendBeacon){
     const blob = new Blob([body], {type:'application/json'});
-    navigator.sendBeacon(DB.syncUrl, blob);
+    navigator.sendBeacon(DB.syncUrl + '?action=push', blob);
   } else {
-    fetch(DB.syncUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true}).catch(()=>{});
+    fetch(DB.syncUrl + '?action=push', {method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true}).catch(()=>{});
   }
   DB._dirty = false;
   localStorage.setItem('lastSync', new Date().toISOString());

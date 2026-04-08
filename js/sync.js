@@ -53,8 +53,10 @@ function saveSyncUrl(){
 }
 
 async function doSyncRequest(params){
-  // POST — works reliably with Apps Script on personal Gmail
-  const r = await fetch(DB.syncUrl, {
+  // Always pass action in URL so it survives Google's redirects.
+  // Data payload goes in POST body (stays intact on same-origin redirects).
+  const url = DB.syncUrl + '?action=' + encodeURIComponent(params.action || '');
+  const r = await fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(params),
