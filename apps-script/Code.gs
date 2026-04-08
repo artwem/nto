@@ -271,182 +271,219 @@ function pushData(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   setupSheets(ss);
 
-  const dbg = {
-    received_expenses: (data.expenses||[]).length,
-    received_cats: (data.categories||[]).length,
-    received_incomes: (data.incomes||[]).length,
-    cat_names: (data.categories||[]).slice(0,5),
-    first_expense: (data.expenses||[])[0] || null,
-    dateColMap_sample: [],
-    catRowMap_sample: [],
-    cells_written: 0,
-    comments_written: 0,
-    errors: []
-  };
-  const categories = data.categories || [];
+  const op = data.op || 'full'; // operation type
+  const dbg = { op, cells_written: 0, comments_written: 0, rows_added: 0 };
 
-  // --- Push expenses ---
+  if (op === 'cats' || op === 'full') {
+    pushCategories(ss, data.categories || []);
+  }
+
+  if (op === 'limits' || op === 'full') {
+    pushLimits(ss, data.categories || [], data.limits || (data.month ? { [data.month]: data.limits_arr || data.limits } : {}));
+  }
+
+  if (op === 'expenses' || op === 'full') {
+    const r = pushExpenses(ss, data.categories || [], data.expenses || []);
+    dbg.cells_written = r.cells;
+    dbg.comments_written = r.comments;
+    dbg.dateColMap_total = r.dateColTotal;
+    dbg.catRowMap_total = r.catRowTotal;
+    dbg.first_expense = (data.expenses||[])[0] || null;
+  }
+
+  if (op === 'assets' || op === 'full') {
+    pushAssets(ss, data.assets || [], data.banks || [], data.creditBanks || []);
+  }
+
+  if (op === 'incomes' || op === 'full') {
+    pushIncomes(ss, data.incomes || []);
+  }
+
+  return { success: true, debug: dbg };
+}
+
+function pushCategories(ss, categories) {
+  if (!categories.length) return;
+  const daysSheet = ss.getSheetByName(SHEET_DAYS);
+  const sheetData = daysSheet.getDataRange().getValues();
+  const catRowMap = {};
+  for (let r = 1; r < sheetData.length; r++) {
+    const c = sheetData[r][0];
+    if (c && String(c) !== 'Итого') catRowMap[String(c)] = r;
+  }
+  for (const cat of categories) {
+    if (catRowMap[cat] || cat === 'Итого') continue;
+    let itogoRow = daysSheet.getLastRow();
+    for (let r = 1; r <= daysSheet.getLastRow(); r++) {
+      if (daysSheet.getRange(r,1).getValue() === 'Итого') { itogoRow = r; break; }
+    }
+    daysSheet.insertRowBefore(itogoRow);
+    daysSheet.getRange(itogoRow, 1).setValue(cat);
+    catRowMap[cat] = itogoRow - 1;
+    // Add to Шаблон
+    const tmpl = ss.getSheetByName(SHEET_TEMPLATE);
+    if (tmpl) {
+      const td = tmpl.getDataRange().getValues();
+      let ti = tmpl.getLastRow();
+      for (let r = 0; r < td.length; r++) { if (td[r][0] === 'Итого') { ti = r+1; break; } }
+      tmpl.insertRowBefore(ti);
+      tmpl.getRange(ti, 1).setValue(cat);
+      tmpl.getRange(ti, 5).setValue(0);
+    }
+  }
+}
+
+function pushExpenses(ss, categories, expenses) {
+  const result = { cells: 0, comments: 0, dateColTotal: 0, catRowTotal: 0 };
+  if (!expenses.length) return result;
+
   const daysSheet = ss.getSheetByName(SHEET_DAYS);
   const sheetData = daysSheet.getDataRange().getValues();
   const headerRow = sheetData[0];
+
+  // Build dateColMap — handle both Date objects and serial numbers
   const dateColMap = {};
   for (let c = 1; c < headerRow.length; c++) {
     const cell = headerRow[c];
     if (cell instanceof Date) {
       dateColMap[fmtDate(cell)] = c;
     } else if (typeof cell === 'number' && cell > 40000) {
-      // Google Sheets serial date number → JS Date
-      const jsDate = new Date((cell - 25569) * 86400 * 1000);
-      dateColMap[fmtDate(jsDate)] = c;
+      const d = new Date(Math.round((cell - 25569) * 86400 * 1000));
+      dateColMap[fmtDate(d)] = c;
     }
   }
-  dbg.dateColMap_sample = Object.keys(dateColMap).slice(0, 5);
-  dbg.dateColMap_total = Object.keys(dateColMap).length;
+  result.dateColTotal = Object.keys(dateColMap).length;
+
+  // Build catRowMap
   const catRowMap = {};
   for (let r = 1; r < sheetData.length; r++) {
-    const cat = sheetData[r][0];
-    if (cat && String(cat) !== 'Итого') catRowMap[String(cat)] = r;
+    const c = sheetData[r][0];
+    if (c && String(c) !== 'Итого') catRowMap[String(c)] = r;
   }
-  dbg.catRowMap_sample = Object.keys(catRowMap).slice(0, 5);
-  dbg.catRowMap_total = Object.keys(catRowMap).length;
-  // Add new categories to По дням and Шаблон
-  for (const cat of categories) {
-    if (!catRowMap[cat] && cat !== 'Итого') {
-      // Find Итого row
-      let itogoRow = daysSheet.getLastRow();
-      for (let r = 1; r <= daysSheet.getLastRow(); r++) {
-        if (daysSheet.getRange(r,1).getValue() === 'Итого') { itogoRow = r; break; }
-      }
-      daysSheet.insertRowBefore(itogoRow);
-      daysSheet.getRange(itogoRow, 1).setValue(cat);
-      catRowMap[cat] = itogoRow - 1;
-      // Also add to Шаблон — before its Итого row
-      const tmpl = ss.getSheetByName(SHEET_TEMPLATE);
-      const tmplData = tmpl.getDataRange().getValues();
-      let tmplItogoRow = tmpl.getLastRow();
-      for (let r = 1; r <= tmplData.length; r++) {
-        if (tmplData[r-1] && tmplData[r-1][0] === 'Итого') { tmplItogoRow = r; break; }
-      }
-      tmpl.insertRowBefore(tmplItogoRow);
-      tmpl.getRange(tmplItogoRow, 1).setValue(cat);
-      tmpl.getRange(tmplItogoRow, 5).setValue(0);
-    }
-  }
-  // Write expense values
+  result.catRowTotal = Object.keys(catRowMap).length;
+
+  // Write expense cells — group by cat+date, sum amounts
   const cellMap = {};
-  for (const exp of (data.expenses||[])) {
-    const catName = categories[exp.cat]; if(!catName) continue;
-    const col = dateColMap[exp.date], row = catRowMap[catName];
-    if (col===undefined||row===undefined) continue;
-    cellMap[row+'_'+col] = (cellMap[row+'_'+col]||0) + exp.amount;
+  const commentMap = {};
+  for (const exp of expenses) {
+    const catName = categories[exp.cat];
+    if (!catName) continue;
+    const col = dateColMap[exp.date];
+    const row = catRowMap[catName];
+    if (col === undefined || row === undefined) continue;
+    const key = row + '_' + col;
+    cellMap[key] = (cellMap[key] || 0) + exp.amount;
+    if (exp.comment) commentMap[exp.cat + '_' + exp.date] = { comment: exp.comment, cat: exp.cat, date: exp.date, catName };
   }
-  dbg.cellMap_count = Object.keys(cellMap).length;
+
   for (const [key, amount] of Object.entries(cellMap)) {
-    const [r,c] = key.split('_').map(Number);
-    daysSheet.getRange(r+1,c+1).setValue(amount);
-    dbg.cells_written++;
+    const [r, c] = key.split('_').map(Number);
+    daysSheet.getRange(r + 1, c + 1).setValue(amount);
+    result.cells++;
   }
 
-  // --- Push comments ---
-  const commSheet = ss.getSheetByName(SHEET_COMMENTS);
-  const existingComm = {};
+  // Write comments
+  const commSheet = ss.getSheetByName(SHEET_COMMENTS) || ss.insertSheet(SHEET_COMMENTS);
   const commData = commSheet.getDataRange().getValues();
+  const existingComm = {};
   for (let r = 1; r < commData.length; r++) {
-    const [ci, ds] = commData[r];
-    if (ci!==''&&ci!==null) existingComm[ci+'_'+ds] = r+1;
+    if (commData[r][0] !== '') existingComm[commData[r][0] + '_' + commData[r][1]] = r + 1;
   }
-  for (const exp of (data.expenses||[])) {
-    if (!exp.comment) continue;
-    const mapKey = exp.cat+'_'+exp.date;
-    if (existingComm[mapKey]) commSheet.getRange(existingComm[mapKey],3).setValue(exp.comment);
-    else { commSheet.appendRow([exp.cat, exp.date, exp.comment, categories[exp.cat]||'']); existingComm[mapKey]=commSheet.getLastRow(); }
-    dbg.comments_written++;
-  }
-
-  // --- Push incomes ---
-  const incSheet = ss.getSheetByName(SHEET_INCOME);
-  const incData = incSheet.getDataRange().getValues();
-  const existingInc = {};
-  for (let r = 1; r < incData.length; r++) {
-    if (incData[r][0]) existingInc[String(incData[r][0])] = r+1;
-  }
-  for (const inc of (data.incomes||[])) {
-    const row = [inc.id, inc.date, inc.source, inc.amount, inc.comment||'', inc.date.slice(0,7)];
-    if (existingInc[inc.id]) {
-      incSheet.getRange(existingInc[inc.id], 1, 1, row.length).setValues([row]);
+  for (const [key, info] of Object.entries(commentMap)) {
+    const rowNum = existingComm[key];
+    if (rowNum) {
+      commSheet.getRange(rowNum, 3).setValue(info.comment);
     } else {
-      incSheet.appendRow(row);
-      existingInc[inc.id] = incSheet.getLastRow();
+      commSheet.appendRow([info.cat, info.date, info.comment, info.catName]);
     }
+    result.comments++;
   }
 
-  // --- Push assets ---
-  const allBanksPush = [...(data.banks||[]), ...(data.creditBanks||[])];
-  if (allBanksPush.length > 0) {
-    const aSheet = ss.getSheetByName(SHEET_ASSETS);
-    const aData = aSheet.getDataRange().getValues();
-    const aHeader = aData[0];
-    const colByBank = {};
-    for (let c = 1; c < aHeader.length; c++) colByBank[String(aHeader[c]||'')] = c;
-    for (const bank of allBanksPush) {
-      if (!colByBank[bank]) {
-        const lastCol = aSheet.getLastColumn();
-        aSheet.insertColumnBefore(lastCol);
-        aSheet.getRange(1, lastCol).setValue(bank);
-        colByBank[bank] = lastCol;
-      }
-    }
-    const dateRowMap = {};
-    const freshData = aSheet.getDataRange().getValues();
-    for (let r = 1; r < freshData.length; r++) {
-      if (freshData[r][0] instanceof Date) dateRowMap[fmtDate(freshData[r][0])] = r+1;
-    }
-    const assetMap = {};
-    for (const a of (data.assets||[])) {
-      const bname = allBanksPush[a.bank]; if(!bname) continue;
-      assetMap[a.date+'|'+bname] = { amount: a.amount, date: a.date, bank: bname };
-    }
-    for (const {amount, date, bank} of Object.values(assetMap)) {
-      const col = colByBank[bank]; if(!col) continue;
-      let row = dateRowMap[date];
-      if (!row) {
-        aSheet.appendRow([new Date(date)]);
-        row = aSheet.getLastRow();
-        dateRowMap[date] = row;
-        const lastDataCol = columnLetter(aSheet.getLastColumn()-1);
-        aSheet.getRange(row, aSheet.getLastColumn()).setFormula(
-          '=IF(SUM(B'+row+':'+lastDataCol+row+')=0,,SUM(B'+row+':'+lastDataCol+row+'))'
-        );
-      }
-      aSheet.getRange(row, col).setValue(amount);
-    }
-  }
+  return result;
+}
 
-  // --- Push limits ---
-  if (data.limits) {
-    Object.entries(data.limits).forEach(([key, limArr]) => {
-      const [yr, mo] = key.split('-').map(Number);
-      const mSheet = getOrCreateMonthSheet(ss, yr, mo-1);
-      const mData = mSheet.getDataRange().getValues();
-      const mCatRow = {};
-      for (let r = 1; r < mData.length; r++) {
-        const cat = mData[r][0];
-        if (cat && String(cat)!=='Итого') mCatRow[String(cat)] = r+1;
-      }
-      categories.forEach((cat, idx) => {
-        const lim = limArr[idx]; if(lim===undefined) return;
-        if (mCatRow[cat]) mSheet.getRange(mCatRow[cat],5).setValue(lim);
-        else {
-          let itogoRow = mSheet.getLastRow();
-          for (let r = 1; r <= mSheet.getLastRow(); r++) {
-            if (mSheet.getRange(r,1).getValue()==='Итого') { itogoRow = r; break; }
-          }
-          mSheet.insertRowBefore(itogoRow);
-          mSheet.getRange(itogoRow, 1).setValue(cat);
-          mSheet.getRange(itogoRow, 5).setValue(lim);
+function pushLimits(ss, categories, limits) {
+  Object.entries(limits).forEach(([key, limArr]) => {
+    if (!Array.isArray(limArr)) return;
+    const [yr, mo] = key.split('-').map(Number);
+    const mSheet = getOrCreateMonthSheet(ss, yr, mo - 1);
+    const mData = mSheet.getDataRange().getValues();
+    const mCatRow = {};
+    for (let r = 1; r < mData.length; r++) {
+      const c = mData[r][0];
+      if (c && String(c) !== 'Итого') mCatRow[String(c)] = r + 1;
+    }
+    categories.forEach((cat, idx) => {
+      const lim = limArr[idx]; if (lim === undefined) return;
+      if (mCatRow[cat]) {
+        mSheet.getRange(mCatRow[cat], 5).setValue(lim);
+      } else {
+        let iRow = mSheet.getLastRow();
+        for (let r = 1; r <= mSheet.getLastRow(); r++) {
+          if (mSheet.getRange(r,1).getValue() === 'Итого') { iRow = r; break; }
         }
-      });
+        mSheet.insertRowBefore(iRow);
+        mSheet.getRange(iRow, 1).setValue(cat);
+        mSheet.getRange(iRow, 5).setValue(lim);
+      }
     });
+  });
+}
+
+function pushAssets(ss, assets, banks, creditBanks) {
+  if (!assets.length) return;
+  const allBanks = [...banks, ...creditBanks];
+  const aSheet = ss.getSheetByName(SHEET_ASSETS);
+  if (!aSheet) return;
+  const aData = aSheet.getDataRange().getValues();
+  const aHeader = aData[0];
+  const colByBank = {};
+  for (let c = 1; c < aHeader.length; c++) colByBank[String(aHeader[c]||'')] = c;
+
+  // Add missing bank columns
+  for (const bank of allBanks) {
+    if (!colByBank[bank] && bank) {
+      const lc = aSheet.getLastColumn();
+      aSheet.insertColumnBefore(lc);
+      aSheet.getRange(1, lc).setValue(bank);
+      colByBank[bank] = lc;
+    }
   }
-  return dbg;
+
+  // Build date → row map
+  const freshData = aSheet.getDataRange().getValues();
+  const dateRowMap = {};
+  for (let r = 1; r < freshData.length; r++) {
+    if (freshData[r][0] instanceof Date) dateRowMap[fmtDate(freshData[r][0])] = r + 1;
+  }
+
+  for (const a of assets) {
+    const bname = allBanks[a.bank]; if (!bname) continue;
+    const col = colByBank[bname]; if (!col) continue;
+    let row = dateRowMap[a.date];
+    if (!row) {
+      aSheet.appendRow([new Date(a.date)]);
+      row = aSheet.getLastRow();
+      dateRowMap[a.date] = row;
+      const lc = aSheet.getLastColumn();
+      const ldc = columnLetter(lc - 1);
+      aSheet.getRange(row, lc).setFormula('=IF(SUM(B'+row+':'+ldc+row+')=0,,SUM(B'+row+':'+ldc+row+'))');
+    }
+    aSheet.getRange(row, col).setValue(a.amount);
+  }
+}
+
+function pushIncomes(ss, incomes) {
+  if (!incomes.length) return;
+  const incSheet = ss.getSheetByName(SHEET_INCOME) || getOrCreateSheet(ss, SHEET_INCOME, ['id','date','source','amount','comment','month']);
+  const incData = incSheet.getDataRange().getValues();
+  const existing = {};
+  for (let r = 1; r < incData.length; r++) {
+    if (incData[r][0]) existing[String(incData[r][0])] = r + 1;
+  }
+  for (const inc of incomes) {
+    const row = [inc.id, inc.date, inc.source, inc.amount, inc.comment||'', inc.date.slice(0,7)];
+    if (existing[inc.id]) incSheet.getRange(existing[inc.id], 1, 1, row.length).setValues([row]);
+    else { incSheet.appendRow(row); existing[inc.id] = incSheet.getLastRow(); }
+  }
 }
