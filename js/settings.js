@@ -5,7 +5,7 @@ function renderSettings(){
   ['sync-test-row','sync-pull-row','sync-push-row','sync-last-row'].forEach(id=>{
     document.getElementById(id).style.display = hasSyncUrl?'flex':'none';
   });
-  const lastSync = localStorage.getItem('lastSync');
+  const lastSync = localStorage.getItem('lastSync') || sessionStorage.getItem('lastSync');
   if(lastSync){
     const d = new Date(lastSync);
     document.getElementById('sync-last-time').textContent =

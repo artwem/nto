@@ -44,8 +44,17 @@ function loadDB(){
       DB.limits[monthKey(now.getFullYear(),now.getMonth())] = arr;
     }
   }
-  // syncUrl stored separately so it survives DB resets
-  DB.syncUrl = localStorage.getItem('syncUrl') || '';
+  // syncUrl: read from multiple storages — iOS PWA has isolated localStorage
+  DB.syncUrl = (
+    localStorage.getItem('syncUrl') ||
+    sessionStorage.getItem('syncUrl') ||
+    readSyncUrlFromCookie() ||
+    ''
+  );
+  // If found in a secondary source, persist to localStorage for next time
+  if (DB.syncUrl && !localStorage.getItem('syncUrl')) {
+    localStorage.setItem('syncUrl', DB.syncUrl);
+  }
   if(!DB.banks || !DB.banks.length) DB.banks = ['Сбер','Альфа','Тиньк','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ'];
   if(!DB.creditBanks) DB.creditBanks = ['КРЕДИТ(СПЛИТ)'];
   if(!DB.catColors) DB.catColors = {};
@@ -57,6 +66,32 @@ function loadDB(){
 function saveDB(){
   DB._dirty = true;
   localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
+}
+
+// ─── SYNC URL PERSISTENCE ────────────────────────────────────────────
+// iOS PWA has separate localStorage from Safari — use cookies as bridge
+function saveSyncUrlEverywhere(url){
+  try { localStorage.setItem('syncUrl', url); } catch(_){}
+  try { sessionStorage.setItem('syncUrl', url); } catch(_){}
+  writeSyncUrlToCookie(url);
+}
+
+function writeSyncUrlToCookie(url){
+  try {
+    // expires in 1 year
+    const exp = new Date(Date.now() + 365*24*60*60*1000).toUTCString();
+    // encode URL to avoid cookie parsing issues
+    // Use root path so cookie works on GitHub Pages subpaths like /repo-name/
+    const cookiePath = location.pathname.split('/').slice(0, 2).join('/') || '/';
+    document.cookie = 'syncUrl=' + encodeURIComponent(url) + '; expires=' + exp + '; path=' + cookiePath + '; SameSite=Lax';
+  } catch(_){}
+}
+
+function readSyncUrlFromCookie(){
+  try {
+    const match = document.cookie.match(/(?:^|; )syncUrl=([^;]*)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch(_){ return ''; }
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────

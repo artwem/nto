@@ -44,7 +44,7 @@ function openSyncSettings(){
 function saveSyncUrl(){
   const url = document.getElementById('sync-url-input').value.trim();
   DB.syncUrl = url;
-  localStorage.setItem('syncUrl', url);
+  saveSyncUrlEverywhere(url);  // saves to localStorage + sessionStorage + cookie
   saveDB();
   closeModal('modal-sync');
   renderSettings();

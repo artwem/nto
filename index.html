@@ -7,6 +7,18 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#ffffff">
 <title>Бюджет</title>
+<script>
+  // Set base href dynamically so relative paths work on GitHub Pages (/repo-name/)
+  // and at root (/) equally
+  (function(){
+    const base = document.createElement('base');
+    const path = location.pathname.endsWith('/')
+      ? location.pathname
+      : location.pathname.slice(0, location.pathname.lastIndexOf('/') + 1);
+    base.href = path;
+    document.head.appendChild(base);
+  })();
+</script>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="css/app.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
