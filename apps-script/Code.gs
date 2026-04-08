@@ -47,8 +47,8 @@ function handleRequest(action, data) {
     else if (action === 'push') {
       const payload = (typeof data === 'string') ? JSON.parse(data) : data;
       if (!payload) throw new Error('Empty payload');
-      pushData(payload);
-      result = { success: true };
+      const debug = pushData(payload);
+      result = { success: true, debug };
     }
     else result = { error: 'Unknown action: "' + action + '". Valid: ping, pull, push' };
   } catch(err) {
@@ -271,9 +271,18 @@ function pushData(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   setupSheets(ss);
 
-  Logger.log('pushData received: expenses=' + (data.expenses||[]).length +
-    ' cats=' + (data.categories||[]).length +
-    ' incomes=' + (data.incomes||[]).length);
+  const dbg = {
+    received_expenses: (data.expenses||[]).length,
+    received_cats: (data.categories||[]).length,
+    received_incomes: (data.incomes||[]).length,
+    cat_names: (data.categories||[]).slice(0,5),
+    first_expense: (data.expenses||[])[0] || null,
+    dateColMap_sample: [],
+    catRowMap_sample: [],
+    cells_written: 0,
+    comments_written: 0,
+    errors: []
+  };
   const categories = data.categories || [];
 
   // --- Push expenses ---
@@ -291,13 +300,15 @@ function pushData(data) {
       dateColMap[fmtDate(jsDate)] = c;
     }
   }
-  Logger.log('dateColMap keys: ' + Object.keys(dateColMap).slice(0,5).join(', ') + '...');
+  dbg.dateColMap_sample = Object.keys(dateColMap).slice(0, 5);
+  dbg.dateColMap_total = Object.keys(dateColMap).length;
   const catRowMap = {};
   for (let r = 1; r < sheetData.length; r++) {
     const cat = sheetData[r][0];
     if (cat && String(cat) !== 'Итого') catRowMap[String(cat)] = r;
   }
-  Logger.log('catRowMap keys: ' + Object.keys(catRowMap).slice(0,5).join(', '));
+  dbg.catRowMap_sample = Object.keys(catRowMap).slice(0, 5);
+  dbg.catRowMap_total = Object.keys(catRowMap).length;
   // Add new categories to По дням and Шаблон
   for (const cat of categories) {
     if (!catRowMap[cat] && cat !== 'Итого') {
@@ -329,9 +340,11 @@ function pushData(data) {
     if (col===undefined||row===undefined) continue;
     cellMap[row+'_'+col] = (cellMap[row+'_'+col]||0) + exp.amount;
   }
+  dbg.cellMap_count = Object.keys(cellMap).length;
   for (const [key, amount] of Object.entries(cellMap)) {
     const [r,c] = key.split('_').map(Number);
     daysSheet.getRange(r+1,c+1).setValue(amount);
+    dbg.cells_written++;
   }
 
   // --- Push comments ---
@@ -347,6 +360,7 @@ function pushData(data) {
     const mapKey = exp.cat+'_'+exp.date;
     if (existingComm[mapKey]) commSheet.getRange(existingComm[mapKey],3).setValue(exp.comment);
     else { commSheet.appendRow([exp.cat, exp.date, exp.comment, categories[exp.cat]||'']); existingComm[mapKey]=commSheet.getLastRow(); }
+    dbg.comments_written++;
   }
 
   // --- Push incomes ---
@@ -434,4 +448,5 @@ function pushData(data) {
       });
     });
   }
+  return dbg;
 }
