@@ -42,16 +42,17 @@ function doPost(e) { return doGet(e); }
 function handleRequest(action, data) {
   let result = {};
   try {
-    if      (action === 'ping') result = { ok: true, version: '8.1' };
+    if      (action === 'ping') result = { ok: true, version: '8.2' };
     else if (action === 'pull') result = pullData();
     else if (action === 'push') {
       const payload = (typeof data === 'string') ? JSON.parse(data) : data;
+      if (!payload) throw new Error('Empty payload');
       pushData(payload);
       result = { success: true };
     }
     else result = { error: 'Unknown action: "' + action + '". Valid: ping, pull, push' };
   } catch(err) {
-    result = { error: err.message, stack: err.stack };
+    result = { error: err.message };
   }
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
