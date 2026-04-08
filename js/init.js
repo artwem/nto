@@ -11,8 +11,7 @@ function init(){
   initSyncWidget();
   if(DB.syncUrl) autoSyncOnStart();
   // Auto-push on page close
-  window.addEventListener('beforeunload', autoSyncOnClose);
-  window.addEventListener('pagehide', autoSyncOnClose);
+  // Автопуш при закрытии отключён — используй кнопку «Выгрузить»
 }
 
 // ── SYNC STATUS WIDGET ──────────────────────────────────────────────
