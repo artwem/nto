@@ -148,8 +148,7 @@ function setSyncStatus(state, isoTs){
 
 function syncWidgetTap(){
   if(!DB.syncUrl){ openSyncSettings(); return; }
-  const action = confirm('Синхронизация\n\nОК — Загрузить из таблицы\nОтмена — Выгрузить в таблицу');
-  if(action) pullFromSheets(); else pushToSheets();
+  openModal('modal-sync-choice');
 }
 
 function initSyncWidget(){

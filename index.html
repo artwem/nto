@@ -422,6 +422,44 @@
   </div>
 </div>
 
+<!-- MODAL: SYNC CHOICE -->
+<div class="overlay" id="modal-sync-choice">
+  <div class="sheet" style="position:relative">
+    <button class="close-btn" onclick="closeModal('modal-sync-choice')">✕</button>
+    <h2 style="margin-bottom:6px">Синхронизация</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5">Выберите направление синхронизации с Google Sheets</p>
+
+    <button onclick="closeModal('modal-sync-choice');pullFromSheets()" style="
+      width:100%;padding:14px 16px;border-radius:var(--r);
+      border:0.5px solid var(--border2);background:var(--card);
+      cursor:pointer;text-align:left;margin-bottom:10px;
+      display:flex;align-items:center;gap:14px;font-family:inherit;
+      transition:background .12s;-webkit-tap-highlight-color:transparent">
+      <span style="font-size:24px;flex-shrink:0">⬇</span>
+      <span>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">Загрузить из таблицы</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Данные из Google Sheets → приложение</div>
+      </span>
+    </button>
+
+    <button onclick="closeModal('modal-sync-choice');pushToSheets()" style="
+      width:100%;padding:14px 16px;border-radius:var(--r);
+      border:0.5px solid var(--border2);background:var(--card);
+      cursor:pointer;text-align:left;margin-bottom:4px;
+      display:flex;align-items:center;gap:14px;font-family:inherit;
+      transition:background .12s;-webkit-tap-highlight-color:transparent">
+      <span style="font-size:24px;flex-shrink:0">⬆</span>
+      <span>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">Выгрузить в таблицу</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Данные из приложения → Google Sheets</div>
+      </span>
+    </button>
+
+    <div style="height:8px"></div>
+    <button class="btn" onclick="closeModal('modal-sync-choice')" style="width:100%">Закрыть</button>
+  </div>
+</div>
+
 <!-- MODAL: SYNC SETTINGS -->
 <div class="overlay" id="modal-sync">
   <div class="sheet" style="position:relative">
