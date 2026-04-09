@@ -31,26 +31,68 @@ function openCatManager(){
 
 function renderCatManager(){
   document.getElementById('cat-manager-list').innerHTML = DB.categories.map((c,i)=>`
-    <div class="setting-row" style="cursor:default;gap:6px">
-      <input type="color" value="${getCatColor(i)}" style="width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none" onchange="setCatColor(${i},this.value)" title="Цвет категории"/>
-      <span class="setting-label" style="flex:1">${c}</span>
+    <div class="setting-row" style="cursor:default;gap:6px;flex-wrap:nowrap" id="cat-row-${i}">
+      <input type="color" value="${getCatColor(i)}"
+        style="width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none"
+        onchange="setCatColor(${i},this.value)" title="Цвет категории"/>
+      <span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditCat(${i})">${c}</span>
+      <button class="btn small" style="padding:5px 8px;flex-shrink:0" onclick="startEditCat(${i})" title="Переименовать">✎</button>
       ${DB.categories.length>1?`<button class="btn danger small" onclick="removeCategory(${i})">✕</button>`:''}
     </div>
   `).join('');
 }
 
+function startEditCat(i){
+  const row = document.getElementById('cat-row-'+i);
+  if(!row) return;
+  const oldName = DB.categories[i];
+  row.innerHTML = \`
+    <input type="color" value="\${getCatColor(i)}"
+      style="width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none"
+      onchange="setCatColor(\${i},this.value)"/>
+    <input type="text" id="cat-edit-\${i}" value="\${oldName}"
+      style="flex:1;padding:6px 8px;font-size:14px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text);font-family:inherit"
+      onkeydown="if(event.key==='Enter')saveCatName(\${i});if(event.key==='Escape')renderCatManager()"/>
+    <button class="btn primary small" onclick="saveCatName(\${i})">✓</button>
+    <button class="btn small" onclick="renderCatManager()">✕</button>
+  \`;
+  setTimeout(()=>{
+    const inp = document.getElementById('cat-edit-'+i);
+    if(inp){ inp.focus(); inp.select(); }
+  }, 50);
+}
+
+function saveCatName(i){
+  const inp = document.getElementById('cat-edit-'+i);
+  if(!inp) return;
+  const newName = inp.value.trim();
+  if(!newName){ toast('Название не может быть пустым'); return; }
+  if(newName === DB.categories[i]){ renderCatManager(); return; }
+  // Check duplicate
+  if(DB.categories.includes(newName)){ toast('Такая категория уже есть'); return; }
+  const oldName = DB.categories[i];
+  DB.categories[i] = newName;
+  // Store rename for sync
+  if(!DB.catRenames) DB.catRenames = [];
+  DB.catRenames.push({from: oldName, to: newName, ts: Date.now()});
+  saveDB();
+  renderCatManager();
+  toast('Переименовано: '+oldName+' → '+newName);
+}
+
 function addCategory(){
   const name=document.getElementById('new-cat-name').value.trim();
-  if(!name) return;
+  if(!name){ toast('Введите название'); return; }
+  if(DB.categories.includes(name)){ toast('Уже существует'); return; }
   DB.categories.push(name);
-  // Add default limit for current month
-  const k=monthKey(currentMonth.y,currentMonth.m);
-  const existing=getLimits(currentMonth.y,currentMonth.m);
-  DB.limits[k]=[...existing,3000];
+  // Add default limit for all existing months
+  Object.keys(DB.limits).forEach(k=>{
+    if(DB.limits[k]) DB.limits[k].push(3000);
+  });
   saveDB();
   document.getElementById('new-cat-name').value='';
   renderCatManager();
-  toast('Категория добавлена');
+  toast('Добавлено: '+name);
 }
 
 function setCatColor(i, color){

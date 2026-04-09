@@ -8,6 +8,7 @@ const SHEET_TEMPLATE = 'Шаблон';
 const SHEET_COMMENTS = 'Комментарии';
 const SHEET_ASSETS   = 'Активы на 01';
 const SHEET_INCOME   = 'Доходы';
+const SHEET_COLORS   = 'Настройки';
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                    'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const DEFAULT_CATS = [
@@ -120,6 +121,7 @@ function setupSheets(ss) {
   ensureSheet(ss, SHEET_ASSETS, ['Дата','Сбер','Альфа','Тинь','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ','КРЕДИТ(СПЛИТ)','Общий актив']);
   ensureSheet(ss, SHEET_INCOME, ['id','date','source','amount','comment','month']);
   ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);
+  ensureSheet(ss, SHEET_COLORS, ['setting','value']);
 }
 
 function getOrCreateMonthSheet(ss, yr, mo) {
@@ -265,7 +267,20 @@ function pullAll() {
     if (!limits[k]) limits[k] = categories.map(c => tmplLims[c]||0);
   }
 
-  return { expenses: Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes };
+  // Read catColors from Настройки sheet
+  let catColors = {};
+  const colorSh = ss.getSheetByName(SHEET_COLORS);
+  if (colorSh) {
+    const cd = colorSh.getDataRange().getValues();
+    for (let r = 1; r < cd.length; r++) {
+      if (cd[r][0] === 'catColors') {
+        try { catColors = JSON.parse(cd[r][1]); } catch(_) {}
+        break;
+      }
+    }
+  }
+
+  return { expenses: Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes, catColors };
 }
 
 // ── PUSH ──────────────────────────────────────────────────────────────
@@ -276,8 +291,22 @@ function pushAll(data) {
   const categories = data.categories || [];
   const written = { cells:0, comments:0, incomes:0, assets:0 };
 
-  // --- 1. Новые категории ---
+  // --- 1. Переименования категорий ---
+  const renames = data.catRenames || [];
   const dsSh = ss.getSheetByName(SHEET_DAYS);
+  if (renames.length) {
+    const dsRenameData = dsSh.getDataRange().getValues();
+    renames.forEach(function(r) {
+      for (let row = 1; row < dsRenameData.length; row++) {
+        if (String(dsRenameData[row][0]) === r.from) {
+          dsSh.getRange(row+1, 1).setValue(r.to);
+          dsRenameData[row][0] = r.to;
+        }
+      }
+    });
+  }
+
+  // --- 1b. Новые категории — только в По дням (Шаблон формулами сам подтянет) ---
   const dsData = dsSh.getDataRange().getValues();
   const catRowMap = {};
   for (let r = 1; r < dsData.length; r++) {
@@ -293,15 +322,20 @@ function pushAll(data) {
     dsSh.insertRowBefore(iRow);
     dsSh.getRange(iRow,1).setValue(cat);
     catRowMap[cat] = iRow-1;
-    const tmpl = ss.getSheetByName(SHEET_TEMPLATE);
-    if (tmpl) {
-      const td = tmpl.getDataRange().getValues();
-      let ti = tmpl.getLastRow();
-      for (let r = 0; r < td.length; r++) { if (td[r][0]==='Итого') { ti=r+1; break; } }
-      tmpl.insertRowBefore(ti);
-      tmpl.getRange(ti,1).setValue(cat);
-      tmpl.getRange(ti,5).setValue(0);
+  }
+
+  // --- 1c. Сохранить цвета категорий на лист "Настройки" ---
+  const catColors = data.catColors || {};
+  if (Object.keys(catColors).length) {
+    const colorSh = ensureSheet(ss, SHEET_COLORS, ['setting','value']);
+    const colorData = colorSh.getDataRange().getValues();
+    let colorRow = -1;
+    for (let r = 1; r < colorData.length; r++) {
+      if (colorData[r][0] === 'catColors') { colorRow = r+1; break; }
     }
+    const colorJson = JSON.stringify(catColors);
+    if (colorRow > 0) colorSh.getRange(colorRow, 2).setValue(colorJson);
+    else colorSh.appendRow(['catColors', colorJson]);
   }
 
   // --- 2. Расходы → ячейки в "По дням" ---

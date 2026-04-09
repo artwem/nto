@@ -118,6 +118,8 @@ async function pushToSheets(){
     sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
     const w = d.written || {};
+    DB.catRenames = [];
+    localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
     toast('✓ Выгружено в таблицу!');
   } catch(e) {
     setSyncStatus('error');

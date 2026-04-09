@@ -85,6 +85,7 @@ function buildPayload(){
     expenses, assets, incomes,
     categories: DB.categories,
     catColors: DB.catColors || {},
+    catRenames: DB.catRenames || [],
     banks: DB.banks,
     creditBanks: DB.creditBanks || [],
     limits: DB.limits
@@ -145,6 +146,7 @@ function buildPushUrls(data) {
 
 function mergePullData(d){
   if(d.categories && d.categories.length) DB.categories = d.categories;
+  if(d.catColors && Object.keys(d.catColors).length) DB.catColors = d.catColors;
   if(d.limits) Object.assign(DB.limits, d.limits);
 
   // Merge expenses:
