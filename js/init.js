@@ -37,16 +37,7 @@ function setSyncStatus(state, isoTs){
   }
 }
 
-function syncWidgetTap(){
-  if(!DB.syncUrl){
-    openSyncSettings();
-    return;
-  }
-  // Show action sheet: push or pull
-  const action = confirm('Синхронизация\n\nОК — Загрузить из таблицы\nОтмена — Выгрузить в таблицу');
-  if(action) pullFromSheets();
-  else pushToSheets();
-}
+
 
 function initSyncWidget(){
   if(!DB.syncUrl) return;

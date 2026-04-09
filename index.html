@@ -490,17 +490,1281 @@
 <!-- ═══════════════════════════════════════════════════════════════
      SCRIPTS  (load order matters)
 ═══════════════════════════════════════════════════════════════ -->
-<script src="js/db.js?v=1775711334"></script>
-<script src="js/nav.js?v=1775711334"></script>
-<script src="js/budget.js?v=1775711334"></script>
-<script src="js/day.js?v=1775711334"></script>
-<script src="js/income.js?v=1775711334"></script>
-<script src="js/stats.js?v=1775711334"></script>
-<script src="js/assets.js?v=1775711334"></script>
-<script src="js/settings.js?v=1775711334"></script>
-<script src="js/sync.js?v=1775711334"></script>
-<script src="js/calc.js?v=1775711334"></script>
-<script src="js/init.js?v=1775711334"></script>
+<script>
+// ═══ db.js ═══
+
+// ─── DATA ───────────────────────────────────────────────────────────
+const DEFAULT_CATS = [
+  'ЖКУ + жилье','Транспорт','Связь + интернет','Еда+Хозтовары, уход',
+  'Еда вне дома','Доставка','Одежда','Зубы','Активности','Хотелки',
+  'Развлечения','Подарки','Такси','Дом, быт, другое','Мама','Непредвиденные расходы'
+];
+const DEFAULT_LIMITS = [15000,3000,1500,20000,8000,5000,5000,3000,4000,5000,3000,3000,2000,4000,5000,5000];
+const CAT_COLORS = ['#378add','#1d9e75','#d85a30','#ba7517','#d4537e','#639922','#534ab7','#e67e22','#185fa5','#993556','#3b6d11','#a32d2d','#0f6e56','#8e44ad','#993c1d','#7f8c8d'];
+const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const SHORT_MONTHS = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+
+let DB = {
+  categories: [...DEFAULT_CATS],
+  catColors: {},
+  expenses: [],
+  incomes: [],
+  assets: [],
+  banks: ['Сбер','Альфа','Тиньк','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ'],
+  creditBanks: ['КРЕДИТ(СПЛИТ)'],
+  limits: {},  // key: "YYYY-MM", value: array of limits per category
+  syncUrl: ''
+};
+
+let currentMonth = {y:0,m:0};
+let currentDay = '';
+let editingExpenseId = null;
+let charts = {};
+
+function loadDB(){
+  const saved = localStorage.getItem('budgetDB_v2');
+  if(saved){
+    try{const d=JSON.parse(saved);Object.assign(DB,d);}catch(e){}
+  } else {
+    const expenses = localStorage.getItem('expenses');
+    if(expenses) DB.expenses = JSON.parse(expenses);
+    const assets = localStorage.getItem('assets');
+    if(assets) DB.assets = JSON.parse(assets);
+    const banks = localStorage.getItem('banks');
+    if(banks) DB.banks = JSON.parse(banks);
+    const limits = localStorage.getItem('limits');
+    if(limits){
+      const arr = JSON.parse(limits);
+      const now = new Date();
+      DB.limits[monthKey(now.getFullYear(),now.getMonth())] = arr;
+    }
+  }
+  // syncUrl: read from multiple storages — iOS PWA has isolated localStorage
+  DB.syncUrl = (
+    localStorage.getItem('syncUrl') ||
+    sessionStorage.getItem('syncUrl') ||
+    readSyncUrlFromCookie() ||
+    ''
+  );
+  // If found in a secondary source, persist to localStorage for next time
+  if (DB.syncUrl && !localStorage.getItem('syncUrl')) {
+    localStorage.setItem('syncUrl', DB.syncUrl);
+  }
+  if(!DB.banks || !DB.banks.length) DB.banks = ['Сбер','Альфа','Тиньк','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ'];
+  if(!DB.creditBanks) DB.creditBanks = ['КРЕДИТ(СПЛИТ)'];
+  if(!DB.catColors) DB.catColors = {};
+  if(!DB.incomes) DB.incomes = [];
+  if(!DB.categories || !DB.categories.length) DB.categories = [...DEFAULT_CATS];
+  if(!DB.limits) DB.limits = {};
+}
+
+function saveDB(){
+  DB._dirty = true;
+  localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
+}
+
+// Save without marking dirty — used after pull sync to avoid triggering push
+function saveDBQuiet(){
+  localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
+}
+
+// ─── SYNC URL PERSISTENCE ────────────────────────────────────────────
+// iOS PWA has separate localStorage from Safari — use cookies as bridge
+function saveSyncUrlEverywhere(url){
+  try { localStorage.setItem('syncUrl', url); } catch(_){}
+  try { sessionStorage.setItem('syncUrl', url); } catch(_){}
+  writeSyncUrlToCookie(url);
+}
+
+function writeSyncUrlToCookie(url){
+  try {
+    // expires in 1 year
+    const exp = new Date(Date.now() + 365*24*60*60*1000).toUTCString();
+    // encode URL to avoid cookie parsing issues
+    // Use root path so cookie works on GitHub Pages subpaths like /repo-name/
+    const cookiePath = location.pathname.split('/').slice(0, 2).join('/') || '/';
+    document.cookie = 'syncUrl=' + encodeURIComponent(url) + '; expires=' + exp + '; path=' + cookiePath + '; SameSite=Lax';
+  } catch(_){}
+}
+
+function readSyncUrlFromCookie(){
+  try {
+    const match = document.cookie.match(/(?:^|; )syncUrl=([^;]*)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch(_){ return ''; }
+}
+
+// ─── HELPERS ────────────────────────────────────────────────────────
+function monthKey(y,m){return y+'-'+String(m+1).padStart(2,'0')}
+function fmt(n){return Math.round(n).toLocaleString('ru-RU')+'₽'}
+function fmtShort(n){if(Math.abs(n)>=1000)return Math.round(n/1000)+'к';return Math.round(n)+''}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function today(){return new Date().toISOString().split('T')[0]}
+
+function getLimits(y,m){
+  const k = monthKey(y,m);
+  if(DB.limits[k]) return DB.limits[k];
+  // fallback: look for most recent prior limits
+  const keys = Object.keys(DB.limits).sort();
+  const prior = keys.filter(k2=>k2<=k).pop();
+  if(prior) return DB.limits[prior];
+  return DB.categories.map((_,i)=>DEFAULT_LIMITS[i]||3000);
+}
+
+function getCatColor(i){
+  if(DB.catColors && DB.catColors[i]) return DB.catColors[i];
+  return CAT_COLORS[i % CAT_COLORS.length];
+}
+
+function getMonthExpenses(y,m){
+  const k = monthKey(y,m);
+  return DB.expenses.filter(e=>e.date.startsWith(k));
+}
+
+function getDayExpenses(date){
+  return DB.expenses.filter(e=>e.date===date);
+}
+
+function getCatSpent(catIdx,y,m){
+  return getMonthExpenses(y,m).filter(e=>e.cat===catIdx).reduce((s,e)=>s+e.amount,0);
+}
+
+// ─── TOAST ──────────────────────────────────────────────────────────
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2200);
+}
+
+// ─── MODAL HELPERS ──────────────────────────────────────────────────
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+// Close on backdrop click
+// Overlay click-outside handler — runs after full DOM load
+function initOverlays(){
+  document.querySelectorAll('.overlay').forEach(el=>{
+    el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});
+  });
+}
+
+
+// ═══ nav.js ═══
+
+// ─── NAV / PAGES ────────────────────────────────────────────────────
+let currentPage = 'budget';
+function showPage(name,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  if(btn) btn.classList.add('active');
+  currentPage = name;
+  document.getElementById('fab').style.display = (name==='budget'||name==='day') ? 'flex' : 'none';
+  document.getElementById('fab').textContent = '+';
+  if(name==='budget') renderBudget();
+  if(name==='day') renderDay();
+  if(name==='stats') renderStats();
+  if(name==='assets') renderAssets();
+  if(name==='calc'){setTimeout(calcUpdate,50);}
+  if(name==='income') renderIncome();
+  if(name==='settings') renderSettings();
+}
+
+// ─── MONTH NAV ──────────────────────────────────────────────────────
+function changeMonth(d){
+  currentMonth.m+=d;
+  if(currentMonth.m>11){currentMonth.m=0;currentMonth.y++;}
+  if(currentMonth.m<0){currentMonth.m=11;currentMonth.y--;}
+  renderBudget();
+}
+
+// ─── DAY NAV ────────────────────────────────────────────────────────
+function changeDay(d){
+  const dt = new Date(currentDay);
+  dt.setDate(dt.getDate()+d);
+  currentDay = dt.toISOString().split('T')[0];
+  renderDay();
+}
+
+
+// ═══ budget.js ═══
+
+// ─── RENDER: BUDGET ─────────────────────────────────────────────────
+function renderBudget(){
+  const {y,m} = currentMonth;
+  document.getElementById('month-label').textContent = MONTHS_RU[m]+' '+y;
+  const limits = getLimits(y,m);
+  const list = document.getElementById('cat-list');
+  list.innerHTML='';
+  let totalSpent=0, totalLimit=0;
+  DB.categories.forEach((cat,i)=>{
+    const spent = getCatSpent(i,y,m);
+    const lim = limits[i]||0;
+    totalSpent+=spent; totalLimit+=lim;
+    const pct = lim>0 ? (spent/lim)*100 : 0;
+    const pctOfBudget = totalLimit>0 ? ((lim/totalLimit)*100) : 0;
+    const isOver = spent>lim&&lim>0;
+    const bar = Math.min(pct,100);
+    const barClass = pct<70?'pf-ok':pct<100?'pf-warn':'pf-over';
+    const badgeClass = isOver?'badge-over':pct>=70?'badge-warn':'badge-ok';
+    const badgeText = isOver?'Превышен':pct.toFixed(0)+'%';
+    const row=document.createElement('div');
+    row.className='cat-row'+(isOver?' over':'');
+    row.innerHTML=`
+      <div class="cat-top">
+        <span class="cat-name">${cat}</span>
+        <div class="cat-badges">
+          <span class="badge ${badgeClass}">${badgeText}</span>
+        </div>
+      </div>
+      <div class="cat-nums">
+        <span class="cat-spent">${fmt(spent)}</span>
+        <span class="cat-limit-txt">из ${fmt(lim)} · ${pctOfBudget.toFixed(0)}% бюджета</span>
+      </div>
+      <div class="progress"><div class="progress-fill ${barClass}" style="width:${bar}%"></div></div>
+    `;
+    list.appendChild(row);
+  });
+  const left=totalLimit-totalSpent;
+  document.getElementById('sum-spent').textContent=fmt(totalSpent);
+  document.getElementById('sum-limit').textContent=fmt(totalLimit);
+  const leftEl=document.getElementById('sum-left');
+  leftEl.textContent=fmt(Math.abs(left));
+  leftEl.className='s-val '+(left<0?'over':'ok');
+}
+
+// ─── EXPENSE CRUD ───────────────────────────────────────────────────
+function openAddExpense(){
+  editingExpenseId = null;
+  document.getElementById('expense-modal-title').textContent='Добавить расход';
+  document.getElementById('exp-delete-btn').style.display='none';
+  populateCatSelect('exp-cat');
+  document.getElementById('exp-date').value = currentPage==='day' ? currentDay : today();
+  document.getElementById('exp-amount').value='';
+  document.getElementById('exp-comment').value='';
+  openModal('modal-expense');
+}
+
+function editExpense(id, e){
+  if(e) e.stopPropagation();
+  const exp = DB.expenses.find(x=>x.id===id);
+  if(!exp) return;
+  editingExpenseId = id;
+  document.getElementById('expense-modal-title').textContent='Редактировать';
+  document.getElementById('exp-delete-btn').style.display='block';
+  populateCatSelect('exp-cat');
+  document.getElementById('exp-cat').value = exp.cat;
+  document.getElementById('exp-amount').value = exp.amount;
+  document.getElementById('exp-date').value = exp.date;
+  document.getElementById('exp-comment').value = exp.comment||'';
+  openModal('modal-expense');
+}
+
+function saveExpense(){
+  const amt = parseFloat(document.getElementById('exp-amount').value);
+  if(!amt||amt<=0){toast('Введите сумму');return;}
+  const obj = {
+    cat: parseInt(document.getElementById('exp-cat').value),
+    amount: amt,
+    date: document.getElementById('exp-date').value,
+    comment: document.getElementById('exp-comment').value
+  };
+  if(editingExpenseId){
+    const idx = DB.expenses.findIndex(e=>e.id===editingExpenseId);
+    if(idx>=0){DB.expenses[idx]={...DB.expenses[idx],...obj};}
+  } else {
+    obj.id = uid();
+    DB.expenses.push(obj);
+  }
+  saveDB();
+  closeModal('modal-expense');
+  if(currentPage==='day') renderDay();
+  else renderBudget();
+  toast(editingExpenseId?'Обновлено':'Добавлено');
+}
+
+function deleteExpense(){
+  if(!editingExpenseId) return;
+  DB.expenses = DB.expenses.filter(e=>e.id!==editingExpenseId);
+  saveDB();
+  closeModal('modal-expense');
+  if(currentPage==='day') renderDay();
+  else renderBudget();
+  toast('Удалено');
+}
+
+function populateCatSelect(id){
+  document.getElementById(id).innerHTML = DB.categories.map((c,i)=>`<option value="${i}">${c}</option>`).join('');
+}
+
+// ─── LIMIT EDITOR ───────────────────────────────────────────────────
+function openLimitEditor(){
+  const sel = document.getElementById('limit-month-sel');
+  // Build list of current + recent 12 months
+  const opts = [];
+  const now = new Date();
+  for(let i=0;i<13;i++){
+    let m=now.getMonth()-i, y=now.getFullYear();
+    if(m<0){m+=12;y--;}
+    opts.push({y,m,label:MONTHS_RU[m]+' '+y,key:monthKey(y,m)});
+  }
+  sel.innerHTML = opts.map(o=>`<option value="${o.key}">${o.label}</option>`).join('');
+  sel.value = monthKey(currentMonth.y,currentMonth.m);
+  loadLimitEditor();
+  openModal('modal-limits');
+}
+
+function loadLimitEditor(){
+  const key = document.getElementById('limit-month-sel').value;
+  const [y,m] = key.split('-').map(Number);
+  const limits = getLimits(y,m-1);
+  const rows = document.getElementById('limit-editor-rows');
+  rows.innerHTML = DB.categories.map((c,i)=>`
+    <div class="limit-edit-row">
+      <span class="limit-edit-name">${c}</span>
+      <input class="limit-edit-input" type="number" id="lim_${i}" value="${limits[i]||0}" inputmode="decimal"/>
+    </div>
+  `).join('');
+}
+
+function saveLimits(){
+  const key = document.getElementById('limit-month-sel').value;
+  const newLimits = DB.categories.map((_,i)=>{
+    const v = parseFloat(document.getElementById('lim_'+i).value)||0;
+    return v;
+  });
+  DB.limits[key] = newLimits;
+  saveDB();
+  closeModal('modal-limits');
+  renderBudget();
+  toast('Лимиты сохранены');
+}
+
+
+// ═══ day.js ═══
+
+// ─── RENDER: DAY ────────────────────────────────────────────────────
+function renderDay(){
+  const d = new Date(currentDay+'T12:00:00');
+  const weekdays = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  document.getElementById('day-label').textContent =
+    weekdays[d.getDay()]+', '+d.getDate()+' '+SHORT_MONTHS[d.getMonth()]+' '+d.getFullYear();
+  const entries = getDayExpenses(currentDay);
+  const total = entries.reduce((s,e)=>s+e.amount,0);
+  document.getElementById('day-total').textContent = fmt(total);
+  const list = document.getElementById('entry-list');
+  list.innerHTML='';
+  if(!entries.length){
+    list.innerHTML='<div class="empty-day"><div style="font-size:32px">📭</div><p>Нет расходов за этот день</p><p>Нажмите + чтобы добавить</p></div>';
+    return;
+  }
+  entries.sort((a,b)=>(b.amount-a.amount));
+  entries.forEach(e=>{
+    const catName = DB.categories[e.cat]||'Неизвестно';
+    const row=document.createElement('div');
+    row.className='entry-row';
+    row.innerHTML=`
+      <div class="entry-dot" style="background:${getCatColor(e.cat)}"></div>
+      <div class="entry-info">
+        <div class="entry-cat">${catName}</div>
+        ${e.comment?`<div class="entry-note">${e.comment}</div>`:''}
+      </div>
+      <div class="entry-amount">${fmt(e.amount)}</div>
+      <button class="entry-del" onclick="editExpense('${e.id}',event)">✎</button>
+    `;
+    list.appendChild(row);
+  });
+}
+
+
+// ═══ income.js ═══
+
+// ─── INCOME ─────────────────────────────────────────────────────────
+let currentIncomeMonth = null;
+let editingIncomeId = null;
+
+function getIncomeMonthExpenses(y, m){
+  const k = monthKey(y, m);
+  return (DB.incomes||[]).filter(i => i.date.startsWith(k));
+}
+
+function renderIncome(){
+  if(!currentIncomeMonth){
+    const now = new Date();
+    currentIncomeMonth = {y: now.getFullYear(), m: now.getMonth()};
+  }
+  const {y, m} = currentIncomeMonth;
+  document.getElementById('income-month-label').textContent = MONTHS_RU[m]+' '+y;
+
+  const incomes = getIncomeMonthExpenses(y, m);
+  const totalIncome = incomes.reduce((s,i) => s+i.amount, 0);
+  const totalExpenses = getMonthExpenses(y, m).reduce((s,e) => s+e.amount, 0);
+  const balance = totalIncome - totalExpenses;
+
+  document.getElementById('income-total').textContent = fmt(totalIncome);
+  document.getElementById('income-expenses').textContent = fmt(totalExpenses);
+  const balEl = document.getElementById('income-balance');
+  balEl.textContent = fmt(Math.abs(balance));
+  balEl.className = 's-val ' + (balance >= 0 ? 'ok' : 'over');
+
+  const list = document.getElementById('income-list');
+  list.innerHTML = '';
+  if(!incomes.length){
+    list.innerHTML = '<div class="empty-day"><div style="font-size:28px">💰</div><p>Нет доходов за этот месяц</p></div>';
+    return;
+  }
+  // Sort by date then amount
+  const sorted = [...incomes].sort((a,b) => a.date.localeCompare(b.date) || b.amount - a.amount);
+  sorted.forEach(inc => {
+    const row = document.createElement('div');
+    row.className = 'setting-row';
+    row.style.cursor = 'pointer';
+    row.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:500">${inc.source}</div>
+        <div style="font-size:11px;color:var(--muted)">${inc.date}${inc.comment ? ' · '+inc.comment : ''}</div>
+      </div>
+      <span style="font-size:15px;font-weight:600;color:var(--green);flex-shrink:0">+${fmt(inc.amount)}</span>
+      <button style="padding:4px 8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;flex-shrink:0" onclick="editIncome('${inc.id}',event)">✎</button>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function changeIncomeMonth(d){
+  if(!currentIncomeMonth){
+    const now = new Date();
+    currentIncomeMonth = {y: now.getFullYear(), m: now.getMonth()};
+  }
+  currentIncomeMonth.m += d;
+  if(currentIncomeMonth.m > 11){currentIncomeMonth.m = 0; currentIncomeMonth.y++;}
+  if(currentIncomeMonth.m < 0){currentIncomeMonth.m = 11; currentIncomeMonth.y--;}
+  renderIncome();
+}
+
+function openAddIncome(){
+  editingIncomeId = null;
+  document.getElementById('income-modal-title').textContent = 'Добавить доход';
+  document.getElementById('inc-delete-btn').style.display = 'none';
+  document.getElementById('inc-source').value = '';
+  document.getElementById('inc-amount').value = '';
+  document.getElementById('inc-date').value = today();
+  document.getElementById('inc-comment').value = '';
+  openModal('modal-income');
+}
+
+function editIncome(id, e){
+  if(e) e.stopPropagation();
+  const inc = (DB.incomes||[]).find(i => i.id === id);
+  if(!inc) return;
+  editingIncomeId = id;
+  document.getElementById('income-modal-title').textContent = 'Редактировать доход';
+  document.getElementById('inc-delete-btn').style.display = 'block';
+  document.getElementById('inc-source').value = inc.source;
+  document.getElementById('inc-amount').value = inc.amount;
+  document.getElementById('inc-date').value = inc.date;
+  document.getElementById('inc-comment').value = inc.comment || '';
+  openModal('modal-income');
+}
+
+function saveIncome(){
+  const source = document.getElementById('inc-source').value.trim();
+  const amt = parseFloat(document.getElementById('inc-amount').value);
+  if(!source){ toast('Укажите источник'); return; }
+  if(!amt || amt <= 0){ toast('Введите сумму'); return; }
+  const obj = { source, amount: amt, date: document.getElementById('inc-date').value, comment: document.getElementById('inc-comment').value };
+  if(!DB.incomes) DB.incomes = [];
+  if(editingIncomeId){
+    const idx = DB.incomes.findIndex(i => i.id === editingIncomeId);
+    if(idx >= 0) DB.incomes[idx] = {...DB.incomes[idx], ...obj};
+  } else {
+    obj.id = uid();
+    DB.incomes.push(obj);
+  }
+  saveDB();
+  closeModal('modal-income');
+  renderIncome();
+  toast(editingIncomeId ? 'Обновлено' : 'Доход добавлен');
+}
+
+function deleteIncome(){
+  if(!editingIncomeId) return;
+  DB.incomes = (DB.incomes||[]).filter(i => i.id !== editingIncomeId);
+  saveDB();
+  closeModal('modal-income');
+  renderIncome();
+  toast('Удалено');
+}
+
+
+// ═══ stats.js ═══
+
+// ─── RENDER: STATS ──────────────────────────────────────────────────
+function renderStats(){
+  const now = new Date();
+  const last6 = [];
+  for(let i=5;i>=0;i--){
+    let m=now.getMonth()-i, y=now.getFullYear();
+    if(m<0){m+=12;y--;}
+    const total=getMonthExpenses(y,m).reduce((s,e)=>s+e.amount,0);
+    last6.push({label:SHORT_MONTHS[m]+"'"+String(y).slice(2),total,y,m});
+  }
+  document.getElementById('pie-month-label').textContent=MONTHS_RU[currentMonth.m]+' '+currentMonth.y;
+  if(charts.monthly) charts.monthly.destroy();
+  charts.monthly=new Chart(document.getElementById('chartMonthly'),{
+    type:'bar',
+    data:{labels:last6.map(x=>x.label),datasets:[{data:last6.map(x=>Math.round(x.total)),backgroundColor:last6.map((_,i)=>i===5?'#1a1a18':'#c8c7c0'),borderRadius:5,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>fmt(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#888'}},y:{grid:{color:'rgba(128,128,128,.1)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}}}}
+  });
+  const {y,m}=currentMonth;
+  const curExp=getMonthExpenses(y,m);
+  const catTotals=DB.categories.map((_,i)=>curExp.filter(e=>e.cat===i).reduce((s,e)=>s+e.amount,0));
+  // Sort by color so same-color categories are adjacent in pie
+  const nonZero=catTotals.map((v,i)=>({v:Math.round(v),i})).filter(x=>x.v>0)
+    .sort((a,b)=>getCatColor(a.i).localeCompare(getCatColor(b.i)));
+  if(charts.pie) charts.pie.destroy();
+  charts.pie=new Chart(document.getElementById('chartPie'),{
+    type:'doughnut',
+    data:{labels:nonZero.map(x=>DB.categories[x.i]),datasets:[{data:nonZero.map(x=>x.v),backgroundColor:nonZero.map(x=>getCatColor(x.i)),borderWidth:2,borderColor:'rgba(0,0,0,0)'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'right',labels:{font:{size:10},padding:6,boxWidth:10,generateLabels:chart=>{const d=chart.data;return d.labels.map((l,i)=>({text:l.length>13?l.slice(0,13)+'…':l,fillStyle:d.datasets[0].backgroundColor[i],strokeStyle:'transparent',lineWidth:0,index:i}));}}}}}
+  });
+  const sorted=[...nonZero].sort((a,b)=>b.v-a.v).slice(0,7);
+  const topH=Math.max(140,sorted.length*36+40);
+  document.getElementById('chart-top-wrap').style.height=topH+'px';
+  if(charts.top) charts.top.destroy();
+  charts.top=new Chart(document.getElementById('chartTop'),{
+    type:'bar',
+    data:{labels:sorted.map(x=>DB.categories[x.i]),datasets:[{data:sorted.map(x=>x.v),backgroundColor:sorted.map(x=>getCatColor(x.i)),borderRadius:4,borderSkipped:false}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>fmt(v.raw)}}},scales:{x:{grid:{color:'rgba(128,128,128,.1)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}},y:{grid:{display:false},ticks:{font:{size:10},color:'#888'}}}}
+  });
+}
+
+
+// ═══ assets.js ═══
+
+// ─── RENDER: ASSETS ─────────────────────────────────────────────────
+function isCredit(bankName){ return (DB.creditBanks||[]).includes(bankName); }
+
+function renderAssets(){
+  const byBank={};
+  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  DB.assets.forEach(a=>{
+    const bname = allBanks[a.bank] || '?';
+    if(!byBank[bname]) byBank[bname]={latest:0,date:''};
+    if(!byBank[bname].date||a.date>=byBank[bname].date){byBank[bname].latest=a.amount;byBank[bname].date=a.date;}
+  });
+  // Total = sum of normal - sum of credit
+  let total=0;
+  Object.entries(byBank).forEach(([name,data])=>{
+    total += isCredit(name) ? -data.latest : data.latest;
+  });
+  document.getElementById('total-val').textContent=fmt(total);
+  const list=document.getElementById('assets-list');
+  list.innerHTML='';
+  // Normal banks first, then credit
+  const sorted = Object.entries(byBank).sort((a,b)=>{
+    const ac=isCredit(a[0]),bc=isCredit(b[0]);
+    return ac===bc?0:ac?1:-1;
+  });
+  sorted.forEach(([name,data])=>{
+    const credit=isCredit(name);
+    const row=document.createElement('div');
+    row.className='asset-row';
+    row.innerHTML=`
+      <span class="asset-name">${name}${credit?' <span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:1px 5px;border-radius:4px;margin-left:4px">кредит</span>':''}</span>
+      <span class="asset-amount" style="${credit?'color:var(--red)':''}">${credit?'−':''}${fmt(data.latest)}</span>`;
+    list.appendChild(row);
+  });
+  if(!sorted.length) list.innerHTML='<div style="padding:20px 0;text-align:center;color:var(--muted);font-size:13px">Нет данных</div>';
+  const blist=document.getElementById('banks-display');
+  blist.innerHTML=[
+    ...(DB.banks||[]).map(b=>`<div class="asset-row"><span class="asset-name">${b}</span><span style="font-size:11px;color:var(--hint)">счёт</span></div>`),
+    ...(DB.creditBanks||[]).map(b=>`<div class="asset-row"><span class="asset-name">${b}</span><span style="font-size:11px;color:var(--red)">кредит</span></div>`)
+  ].join('');
+  // Chart
+  const assetsSorted=[...DB.assets].sort((a,b)=>a.date.localeCompare(b.date));
+  const byDate={};
+  assetsSorted.forEach(a=>{if(!byDate[a.date])byDate[a.date]={};byDate[a.date][a.bank]=a.amount;});
+  const allDates=Object.keys(byDate).sort();
+  const labels=[],data=[];
+  const running={};
+  allDates.forEach(date=>{
+    Object.assign(running,byDate[date]);
+    labels.push(date.slice(5));
+    data.push(Math.round(Object.values(running).reduce((s,v)=>s+v,0)));
+  });
+  if(charts.assets) charts.assets.destroy();
+  if(labels.length>0){
+    charts.assets=new Chart(document.getElementById('chartAssets'),{
+      type:'line',
+      data:{labels,datasets:[{data,borderColor:'#185fa5',backgroundColor:'rgba(24,95,165,.08)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#185fa5',borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>fmt(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888'}},y:{grid:{color:'rgba(128,128,128,.1)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}}}}
+    });
+  }
+}
+
+// ─── ASSET CRUD ─────────────────────────────────────────────────────
+function openAssetModal(){
+  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  document.getElementById('asset-bank').innerHTML = allBanks.map((b,i)=>{
+    const credit = i >= (DB.banks||[]).length;
+    return `<option value="${i}">${b}${credit?' (кредит)':''}</option>`;
+  }).join('');
+  document.getElementById('asset-date').value = today();
+  document.getElementById('asset-amount').value='';
+  openModal('modal-asset');
+}
+
+function saveAsset(){
+  const amt = parseFloat(document.getElementById('asset-amount').value);
+  if(!amt||amt<=0){toast('Введите сумму');return;}
+  DB.assets.push({id:uid(),bank:parseInt(document.getElementById('asset-bank').value),amount:amt,date:document.getElementById('asset-date').value});
+  saveDB();
+  closeModal('modal-asset');
+  renderAssets();
+  toast('Добавлено');
+}
+
+// ─── BANK MANAGER ───────────────────────────────────────────────────
+function openBankManager(){
+  renderBankManager();
+  openModal('modal-banks');
+}
+
+function renderBankManager(){
+  const normalRows = (DB.banks||[]).map((b,i)=>`
+    <div class="setting-row" style="cursor:default">
+      <span class="setting-label">${b}</span>
+      <button class="btn danger small" onclick="removeBank('normal',${i})">Удалить</button>
+    </div>`).join('');
+  const creditRows = (DB.creditBanks||[]).map((b,i)=>`
+    <div class="setting-row" style="cursor:default">
+      <span class="setting-label">${b} <span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:1px 5px;border-radius:4px">кредит</span></span>
+      <button class="btn danger small" onclick="removeBank('credit',${i})">Удалить</button>
+    </div>`).join('');
+  document.getElementById('bank-manager-list').innerHTML =
+    (normalRows||'<div style="padding:8px 0;font-size:13px;color:var(--muted)">Нет счетов</div>') +
+    '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding:10px 0 4px">Кредитные (вычитаются)</div>' +
+    (creditRows||'<div style="padding:4px 0;font-size:13px;color:var(--muted)">Нет кредитных</div>');
+}
+
+function addBank(){
+  const name = document.getElementById('new-bank-name').value.trim();
+  if(!name) return;
+  const isCreditBank = document.getElementById('new-bank-credit').checked;
+  if(isCreditBank){ if(!DB.creditBanks) DB.creditBanks=[]; DB.creditBanks.push(name); }
+  else DB.banks.push(name);
+  saveDB();
+  document.getElementById('new-bank-name').value='';
+  document.getElementById('new-bank-credit').checked=false;
+  renderBankManager();
+  toast(isCreditBank?'Кредитный счёт добавлен':'Банк добавлен');
+}
+
+function removeBank(type, i){
+  if(type==='credit') DB.creditBanks.splice(i,1);
+  else DB.banks.splice(i,1);
+  saveDB();
+  renderBankManager();
+}
+
+
+// ═══ settings.js ═══
+
+// ─── RENDER: SETTINGS ───────────────────────────────────────────────
+function renderSettings(){
+  const hasSyncUrl = !!DB.syncUrl;
+  document.getElementById('sync-url-display').textContent = hasSyncUrl ? DB.syncUrl.slice(0,40)+'…' : 'Не задан';
+  ['sync-test-row','sync-pull-row','sync-push-row','sync-last-row'].forEach(id=>{
+    document.getElementById(id).style.display = hasSyncUrl?'flex':'none';
+  });
+  const lastSync = localStorage.getItem('lastSync') || sessionStorage.getItem('lastSync');
+  if(lastSync){
+    const d = new Date(lastSync);
+    document.getElementById('sync-last-time').textContent =
+      d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  }
+  const cl=document.getElementById('cat-settings-list');
+  cl.innerHTML=DB.categories.map((c,i)=>`
+    <div class="setting-row">
+      <div style="display:flex;align-items:center;gap:8px;flex:1">
+        <div style="width:10px;height:10px;border-radius:50%;background:${getCatColor(i)};flex-shrink:0"></div>
+        <span class="setting-label">${c}</span>
+      </div>
+      <span class="setting-value">${fmt(getLimits(currentMonth.y,currentMonth.m)[i]||0)} / мес</span>
+    </div>
+  `).join('');
+}
+
+// ─── CAT MANAGER ────────────────────────────────────────────────────
+function openCatManager(){
+  renderCatManager();
+  openModal('modal-cats');
+}
+
+function renderCatManager(){
+  document.getElementById('cat-manager-list').innerHTML = DB.categories.map((c,i)=>`
+    <div class="setting-row" style="cursor:default;gap:6px">
+      <input type="color" value="${getCatColor(i)}" style="width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none" onchange="setCatColor(${i},this.value)" title="Цвет категории"/>
+      <span class="setting-label" style="flex:1">${c}</span>
+      ${DB.categories.length>1?`<button class="btn danger small" onclick="removeCategory(${i})">✕</button>`:''}
+    </div>
+  `).join('');
+}
+
+function addCategory(){
+  const name=document.getElementById('new-cat-name').value.trim();
+  if(!name) return;
+  DB.categories.push(name);
+  // Add default limit for current month
+  const k=monthKey(currentMonth.y,currentMonth.m);
+  const existing=getLimits(currentMonth.y,currentMonth.m);
+  DB.limits[k]=[...existing,3000];
+  saveDB();
+  document.getElementById('new-cat-name').value='';
+  renderCatManager();
+  toast('Категория добавлена');
+}
+
+function setCatColor(i, color){
+  if(!DB.catColors) DB.catColors = {};
+  DB.catColors[i] = color;
+  saveDB();
+}
+
+function removeCategory(i){
+  if(DB.categories.length<=1) return;
+  DB.categories.splice(i,1);
+  // Update limits & expenses references
+  Object.keys(DB.limits).forEach(k=>{
+    if(DB.limits[k]) DB.limits[k].splice(i,1);
+  });
+  DB.expenses.forEach(e=>{if(e.cat>i)e.cat--;else if(e.cat===i)e.cat=0;});
+  saveDB();
+  renderCatManager();
+  toast('Категория удалена');
+}
+
+// ─── EXPORT CSV ─────────────────────────────────────────────────────
+function exportCSV(){
+  const rows=[['id','категория','сумма','дата','комментарий']];
+  DB.expenses.forEach(e=>{
+    rows.push([e.id,DB.categories[e.cat]||'',e.amount,e.date,e.comment||'']);
+  });
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download='budget_'+today()+'.csv';
+  a.click();
+  toast('CSV скачан');
+}
+
+function confirmClearData(){
+  openModal('modal-confirm-clear');
+}
+
+function doClearData(){
+  DB.expenses=[];
+  DB.assets=[];
+  DB.incomes=[];
+  DB.limits={};
+  saveDB();
+  closeModal('modal-confirm-clear');
+  renderBudget();
+  toast('Данные удалены');
+}
+
+
+// ═══ sync.js ═══
+
+// ─── GOOGLE SHEETS SYNC ──────────────────────────────────────────────
+// Простой GET-подход: action + JSON данные в URL параметрах.
+// Кнопки «Загрузить» и «Выгрузить» — ручная синхронизация.
+// При старте — автоматический pull. Автопуш при закрытии — отключён.
+
+const APPS_SCRIPT_CODE = window._APPS_SCRIPT_CODE || '';
+
+// ── Копирование скрипта ───────────────────────────────────────────────
+function copyAppsScript(){
+  const code = window._APPS_SCRIPT_CODE || '';
+  if(!code){ toast('Скрипт не загружен'); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code)
+      .then(()=>toast('✓ Скрипт скопирован!'))
+      .catch(()=>showScriptModal());
+  } else {
+    showScriptModal();
+  }
+}
+
+function showScriptModal(){
+  document.getElementById('script-code-ta').value = window._APPS_SCRIPT_CODE || '';
+  openModal('modal-script');
+}
+
+function copyScriptFromModal(){
+  const ta = document.getElementById('script-code-ta');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(ta.value)
+      .then(()=>toast('✓ Скрипт скопирован!'))
+      .catch(()=>toast('Выделите текст и нажмите Ctrl+C'));
+  } else {
+    toast('Выделите текст и нажмите Ctrl+C');
+  }
+}
+
+// ── URL настройки ─────────────────────────────────────────────────────
+function openSyncSettings(){
+  document.getElementById('sync-url-input').value = DB.syncUrl || '';
+  openModal('modal-sync');
+}
+
+function saveSyncUrl(){
+  const url = document.getElementById('sync-url-input').value.trim();
+  DB.syncUrl = url;
+  saveSyncUrlEverywhere(url);
+  saveDB();
+  closeModal('modal-sync');
+  renderSettings();
+  toast('URL сохранён');
+}
+
+// ── Запрос к Apps Script ─────────────────────────────────────────────
+// POST с Content-Type: text/plain — единственный надёжный способ.
+// text/plain не вызывает preflight OPTIONS, CORS не блокирует.
+async function syncRequest(action, data) {
+  const body = JSON.stringify({ action, data: data || null });
+  const r = await fetch(DB.syncUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body,
+    redirect: 'follow'
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const text = await r.text();
+  try { return JSON.parse(text); }
+  catch(e) { throw new Error('Ответ: ' + text.slice(0, 100)); }
+}
+
+// ── Тест соединения ───────────────────────────────────────────────────
+async function testSync(){
+  if(!DB.syncUrl){ toast('URL не задан'); return; }
+  const el = document.getElementById('sync-test-result');
+  el.textContent = '…';
+  try {
+    const d = await syncRequest('ping');
+    el.textContent = d.ok ? '✓ Подключено' : '✗ Ошибка';
+    toast(d.ok ? 'Подключение успешно!' : 'Ошибка: '+(d.error||'?'));
+  } catch(e) {
+    el.textContent = '✗ Недоступно';
+    toast('Ошибка: ' + e.message);
+  }
+}
+
+// ── Pull — загрузить из таблицы ───────────────────────────────────────
+async function pullFromSheets(){
+  if(!DB.syncUrl){ toast('URL не задан'); return; }
+  setSyncStatus('syncing');
+  try {
+    const d = await syncRequest('pull');
+    if(d.error){ setSyncStatus('error'); toast('Ошибка: '+d.error); return; }
+    mergePullData(d);
+    DB._dirty = false;
+    localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
+    renderBudget();
+    const ts = new Date().toISOString();
+    localStorage.setItem('lastSync', ts);
+    sessionStorage.setItem('lastSync', ts);
+    setSyncStatus('ok', ts);
+    toast('✓ Загружено из таблицы!');
+  } catch(e) {
+    setSyncStatus('error');
+    toast('Ошибка загрузки: ' + e.message);
+  }
+}
+
+// ── Push — выгрузить в таблицу ────────────────────────────────────────
+async function pushToSheets(){
+  if(!DB.syncUrl){ toast('URL не задан'); return; }
+  setSyncStatus('syncing');
+  try {
+    const data = buildPayload();
+    const d = await syncRequest('push', data);
+    if(d.error){ setSyncStatus('error'); toast('Ошибка: '+d.error); return; }
+    DB._dirty = false;
+    const ts = new Date().toISOString();
+    localStorage.setItem('lastSync', ts);
+    sessionStorage.setItem('lastSync', ts);
+    setSyncStatus('ok', ts);
+    const w = d.written || {};
+    toast('✓ Записано: ячеек=' + (w.cells||0) + ' комм.=' + (w.comments||0));
+  } catch(e) {
+    setSyncStatus('error');
+    toast('Ошибка выгрузки: ' + e.message);
+  }
+}
+
+// ── Виджет статуса синхронизации ──────────────────────────────────────
+function setSyncStatus(state, isoTs){
+  const widget = document.getElementById('sync-widget');
+  const dot    = document.getElementById('sync-dot');
+  const text   = document.getElementById('sync-text');
+  if(!widget) return;
+  widget.style.display = 'flex';
+  dot.className = 'sync-dot ' + state;
+  if(state === 'syncing'){
+    text.textContent = 'Синхр…';
+  } else if(state === 'ok' && isoTs){
+    const d = new Date(isoTs);
+    const hhmm = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+    text.textContent = new Date().toDateString()===d.toDateString() ? hhmm : d.getDate()+'.'+(d.getMonth()+1)+' '+hhmm;
+  } else if(state === 'error'){
+    text.textContent = 'Ошибка';
+  } else {
+    text.textContent = 'Не синхр.';
+  }
+}
+
+function syncWidgetTap(){
+  if(!DB.syncUrl){ openSyncSettings(); return; }
+  openModal('modal-sync-choice');
+}
+
+function initSyncWidget(){
+  if(!DB.syncUrl) return;
+  const lastSync = localStorage.getItem('lastSync') || sessionStorage.getItem('lastSync');
+  setSyncStatus(lastSync ? 'ok' : 'none', lastSync);
+}
+
+// ── Loader кода Apps Script ───────────────────────────────────────────
+async function loadAppsScriptCode() {
+  try {
+    const r = await fetch('./apps-script/Code.gs');
+    if(r.ok) { window._APPS_SCRIPT_CODE = await r.text(); return; }
+  } catch(_) {}
+  // Inline fallback — обновляется при каждой сборке
+  window._APPS_SCRIPT_CODE = "// ===== BUDGET TRACKER APPS SCRIPT v9 =====\n// GET-only. action \u0438 data \u043f\u0435\u0440\u0435\u0434\u0430\u044e\u0442\u0441\u044f \u043a\u0430\u043a URL \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b.\n// \u0414\u0435\u043f\u043b\u043e\u0439: \u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u044f \u2192 Apps Script \u2192 \u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u2192 \u041d\u043e\u0432\u043e\u0435 \u0440\u0430\u0437\u0432\u0435\u0440\u0442\u044b\u0432\u0430\u043d\u0438\u0435\n// \u0422\u0438\u043f: \u0412\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 | \u0412\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u043a\u0430\u043a: \u042f | \u0414\u043e\u0441\u0442\u0443\u043f: \u0412\u0441\u0435\n\nconst SHEET_DAYS     = '\u041f\u043e \u0434\u043d\u044f\u043c';\nconst SHEET_TEMPLATE = '\u0428\u0430\u0431\u043b\u043e\u043d';\nconst SHEET_COMMENTS = '\u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0438';\nconst SHEET_ASSETS   = '\u0410\u043a\u0442\u0438\u0432\u044b \u043d\u0430 01';\nconst SHEET_INCOME   = '\u0414\u043e\u0445\u043e\u0434\u044b';\nconst MONTHS_RU = ['\u042f\u043d\u0432\u0430\u0440\u044c','\u0424\u0435\u0432\u0440\u0430\u043b\u044c','\u041c\u0430\u0440\u0442','\u0410\u043f\u0440\u0435\u043b\u044c','\u041c\u0430\u0439','\u0418\u044e\u043d\u044c',\n                   '\u0418\u044e\u043b\u044c','\u0410\u0432\u0433\u0443\u0441\u0442','\u0421\u0435\u043d\u0442\u044f\u0431\u0440\u044c','\u041e\u043a\u0442\u044f\u0431\u0440\u044c','\u041d\u043e\u044f\u0431\u0440\u044c','\u0414\u0435\u043a\u0430\u0431\u0440\u044c'];\nconst DEFAULT_CATS = [\n  '\u0416\u041a\u0423 + \u0436\u0438\u043b\u044c\u0435','\u0422\u0440\u0430\u043d\u0441\u043f\u043e\u0440\u0442','\u0421\u0432\u044f\u0437\u044c + \u0438\u043d\u0442\u0435\u0440\u043d\u0435\u0442','\u0415\u0434\u0430+\u0425\u043e\u0437\u0442\u043e\u0432\u0430\u0440\u044b, \u0443\u0445\u043e\u0434',\n  '\u0415\u0434\u0430 \u0432\u043d\u0435 \u0434\u043e\u043c\u0430','\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430','\u041e\u0434\u0435\u0436\u0434\u0430','\u0417\u0443\u0431\u044b','\u0410\u043a\u0442\u0438\u0432\u043d\u043e\u0441\u0442\u0438','\u0425\u043e\u0442\u0435\u043b\u043a\u0438',\n  '\u0420\u0430\u0437\u0432\u043b\u0435\u0447\u0435\u043d\u0438\u044f','\u041f\u043e\u0434\u0430\u0440\u043a\u0438','\u0422\u0430\u043a\u0441\u0438','\u0414\u043e\u043c, \u0431\u044b\u0442, \u0434\u0440\u0443\u0433\u043e\u0435','\u041c\u0430\u043c\u0430','\u041d\u0435\u043f\u0440\u0435\u0434\u0432\u0438\u0434\u0435\u043d\u043d\u044b\u0435 \u0440\u0430\u0441\u0445\u043e\u0434\u044b'\n];\nconst DEFAULT_LIMITS = [15000,3000,1500,20000,8000,5000,5000,3000,4000,5000,3000,3000,2000,4000,5000,5000];\n\n// POST \u0441 Content-Type: text/plain \u2014 \u0431\u0435\u0437 CORS preflight\nfunction doPost(e) {\n  try {\n    const body = JSON.parse(e.postData.contents);\n    const action = body.action || '';\n    if (action === 'ping') return out({ ok: true, version: '9.2' });\n    if (action === 'pull') return out(pullAll());\n    if (action === 'push') return out({ success: true, written: pushAll(body.data || {}) });\n    return out({ error: 'Unknown action: ' + action });\n  } catch(err) {\n    return out({ error: err.message });\n  }\n}\n\n// GET \u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u043c \u0434\u043b\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u0432\u0440\u0443\u0447\u043d\u0443\u044e \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435\nfunction doGet(e) {\n  const action = (e.parameter && e.parameter.action) || '';\n  if (action === 'ping') return out({ ok: true, version: '9.2' });\n  if (action === 'pull') return out(pullAll());\n  return out({ info: 'Budget Tracker API v9.2. Use POST for push.' });\n}\n\nfunction out(obj) {\n  return ContentService.createTextOutput(JSON.stringify(obj))\n    .setMimeType(ContentService.MimeType.JSON);\n}\n\n// \u2500\u2500 HELPERS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfunction fmtDate(d) {\n  return d.getFullYear() + '-' +\n    String(d.getMonth()+1).padStart(2,'0') + '-' +\n    String(d.getDate()).padStart(2,'0');\n}\n\nfunction cellToDate(v) {\n  if (v instanceof Date) return v;\n  if (typeof v === 'number' && v > 40000)\n    return new Date(Math.round((v - 25569) * 86400000));\n  return null;\n}\n\nfunction colLetter(n) {\n  let s = '';\n  while (n > 0) { s = String.fromCharCode(64 + (n-1)%26 + 1) + s; n = Math.floor((n-1)/26); }\n  return s;\n}\n\nfunction ensureSheet(ss, name, headers) {\n  let sh = ss.getSheetByName(name);\n  if (!sh) {\n    sh = ss.insertSheet(name);\n    if (headers && headers.length)\n      sh.getRange(1,1,1,headers.length).setValues([headers]);\n  }\n  return sh;\n}\n\nfunction monthSheetName(yr, mo) { return MONTHS_RU[mo] + ' ' + yr; }\n\n// \u2500\u2500 \u041f\u0415\u0420\u0412\u042b\u0419 \u0417\u0410\u041f\u0423\u0421\u041a: \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043d\u0443\u0436\u043d\u044b\u0435 \u043b\u0438\u0441\u0442\u044b \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfunction setupSheets(ss) {\n  if (!ss.getSheetByName(SHEET_TEMPLATE)) {\n    const t = ss.insertSheet(SHEET_TEMPLATE);\n    const rows = [['\u0421\u0442\u0430\u0442\u044c\u044f \u0420\u0430\u0441\u0445\u043e\u0434\u043e\u0432','\u0421\u0443\u043c\u043c\u0430/\u041c\u0435\u0441','\u0414\u043e\u043b\u044f \u041e\u0431\u0449\u0430\u044f','\u0414\u043e\u043b\u044f \u041b\u0438\u043c\u0438\u0442\u0430','\u041b\u0438\u043c\u0438\u0442\u044b']];\n    DEFAULT_CATS.forEach((c,i) => rows.push([c,0,0,0,DEFAULT_LIMITS[i]||0]));\n    rows.push(['\u0418\u0442\u043e\u0433\u043e',0,0,0,'=SUM(E2:E'+(rows.length)+')']);\n    t.getRange(1,1,rows.length,5).setValues(rows);\n  }\n  if (!ss.getSheetByName(SHEET_DAYS)) {\n    const ds = ss.insertSheet(SHEET_DAYS);\n    const yr = new Date().getFullYear();\n    const dates = [null];\n    for (let d = new Date(yr,0,1); d.getFullYear()===yr; d.setDate(d.getDate()+1))\n      dates.push(new Date(d));\n    ds.getRange(1,1,1,dates.length).setValues([dates]);\n    ds.getRange(1,2,1,dates.length-1).setNumberFormat('dd.mm');\n    const td = ss.getSheetByName(SHEET_TEMPLATE).getDataRange().getValues();\n    let row = 2;\n    for (let r = 1; r < td.length; r++) {\n      const c = td[r][0];\n      if (c && String(c) !== '\u0418\u0442\u043e\u0433\u043e') { ds.getRange(row,1).setValue(c); row++; }\n    }\n    ds.getRange(row,1).setValue('\u0418\u0442\u043e\u0433\u043e');\n  }\n  ensureSheet(ss, SHEET_ASSETS, ['\u0414\u0430\u0442\u0430','\u0421\u0431\u0435\u0440','\u0410\u043b\u044c\u0444\u0430','\u0422\u0438\u043d\u044c','\u0426\u0438\u0444\u0440\u0430+\u0424\u0440\u0438\u0434\u043e\u043c','\u0413\u0430\u0437\u043f\u0440\u043e\u043c','\u042f\u043d\u0434\u0435\u043a\u0441','\u041e\u0437\u043e\u043d','\u0424\u0438\u043d\u0443\u0441\u043b\u0443\u0433\u0438','\u0420\u0421\u0425\u0411','\u041a\u0420\u0415\u0414\u0418\u0422(\u0421\u041f\u041b\u0418\u0422)','\u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432']);\n  ensureSheet(ss, SHEET_INCOME, ['id','date','source','amount','comment','month']);\n  ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);\n}\n\nfunction getOrCreateMonthSheet(ss, yr, mo) {\n  const name = monthSheetName(yr, mo);\n  let sh = ss.getSheetByName(name);\n  if (!sh) {\n    const tmpl = ss.getSheetByName(SHEET_TEMPLATE);\n    sh = tmpl.copyTo(ss);\n    sh.setName(name);\n    sh.getRange(1,6).setValue(new Date(yr, mo, 1));\n  }\n  return sh;\n}\n\n// \u2500\u2500 PULL \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfunction pullAll() {\n  const ss = SpreadsheetApp.getActiveSpreadsheet();\n  setupSheets(ss);\n\n  const daysSheet = ss.getSheetByName(SHEET_DAYS);\n  const daysData = daysSheet.getDataRange().getValues();\n  const header = daysData[0];\n\n  // \u041a\u0430\u0440\u0442\u0430 \u0434\u0430\u0442\u0430 \u2192 \u043a\u043e\u043b\u043e\u043d\u043a\u0430\n  const dateColMap = {};\n  for (let c = 1; c < header.length; c++) {\n    const d = cellToDate(header[c]);\n    if (d) dateColMap[fmtDate(d)] = c;\n  }\n\n  // \u041a\u0430\u0440\u0442\u0430 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f \u2192 \u0441\u0442\u0440\u043e\u043a\u0430\n  const catRowMap = {};\n  const categories = [];\n  for (let r = 1; r < daysData.length; r++) {\n    const cat = String(daysData[r][0] || '');\n    if (cat && cat !== '\u0418\u0442\u043e\u0433\u043e') { catRowMap[cat] = r; categories.push(cat); }\n  }\n\n  // \u0420\u0430\u0441\u0445\u043e\u0434\u044b \u0438\u0437 \u043c\u0430\u0442\u0440\u0438\u0446\u044b\n  const expenseMap = {};\n  for (const cat of categories) {\n    const ri = catRowMap[cat];\n    const ci = categories.indexOf(cat);\n    for (const [ds, col] of Object.entries(dateColMap)) {\n      const v = daysData[ri][col];\n      if (v === null || v === '' || v === undefined) continue;\n      const num = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\\d.]/g,''));\n      if (!isNaN(num) && num > 0) {\n        const key = ci + '_' + ds.replace(/-/g,'');\n        expenseMap[key] = { id:'gs_'+key, cat:ci, amount:num, date:ds, comment:'' };\n      }\n    }\n  }\n\n  // \u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0438 \u2014 \u0434\u0430\u0442\u0430 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c Date-\u043e\u0431\u044a\u0435\u043a\u0442\u043e\u043c \u0438\u043b\u0438 \u0441\u0442\u0440\u043e\u043a\u043e\u0439\n  const commSh = ss.getSheetByName(SHEET_COMMENTS);\n  if (commSh) {\n    const cd = commSh.getDataRange().getValues();\n    for (let r = 1; r < cd.length; r++) {\n      const catIdx = cd[r][0];\n      if (catIdx === '' || catIdx === null || catIdx === undefined) continue;\n      const dateVal = cd[r][1];\n      const dateStr = dateVal instanceof Date ? fmtDate(dateVal) : String(dateVal);\n      const key = catIdx + '_' + dateStr.replace(/-/g,'');\n      if (expenseMap[key] && cd[r][2]) expenseMap[key].comment = String(cd[r][2]);\n    }\n  }\n\n  // \u0414\u043e\u0445\u043e\u0434\u044b\n  const incSh = ss.getSheetByName(SHEET_INCOME);\n  const incomes = [];\n  if (incSh) {\n    const id = incSh.getDataRange().getValues();\n    for (let r = 1; r < id.length; r++) {\n      if (!id[r][0]) continue;\n      const dateVal = id[r][1];\n      const dateStr = dateVal instanceof Date ? fmtDate(dateVal) : String(dateVal);\n      incomes.push({ id:String(id[r][0]), date:dateStr,\n        source:String(id[r][2]||''), amount:+id[r][3]||0, comment:String(id[r][4]||'') });\n    }\n  }\n\n  // \u0410\u043a\u0442\u0438\u0432\u044b\n  const aSh = ss.getSheetByName(SHEET_ASSETS);\n  const assets = [], banks = [], creditBanks = [];\n  if (aSh) {\n    const ad = aSh.getDataRange().getValues();\n    const ah = ad[0];\n    const bankCols = [];\n    for (let c = 1; c < ah.length-1; c++) {\n      const name = String(ah[c]||'').trim();\n      if (!name) continue;\n      const isCredit = name.toUpperCase().includes('\u041a\u0420\u0415\u0414\u0418\u0422');\n      bankCols.push({name, c, isCredit});\n      if (isCredit) creditBanks.push(name); else banks.push(name);\n    }\n    const allB = [...banks,...creditBanks];\n    for (let r = 1; r < ad.length; r++) {\n      const d = cellToDate(ad[r][0]);\n      if (!d) continue;\n      const ds = fmtDate(d);\n      for (const {name, c} of bankCols) {\n        const v = ad[r][c];\n        if (v===null||v===''||v===undefined) continue;\n        const num = typeof v==='number' ? v : parseFloat(String(v).replace(/[^\\d.]/g,''));\n        if (isNaN(num)) continue;\n        assets.push({ id:'gs_a_'+allB.indexOf(name)+'_'+ds.replace(/-/g,''),\n          bank:allB.indexOf(name), amount:Math.abs(num), date:ds });\n      }\n    }\n  }\n\n  // \u041b\u0438\u043c\u0438\u0442\u044b \u0438\u0437 \u043c\u0435\u0441\u044f\u0447\u043d\u044b\u0445 \u043b\u0438\u0441\u0442\u043e\u0432\n  const tmplSh = ss.getSheetByName(SHEET_TEMPLATE);\n  const tmplLims = {};\n  if (tmplSh) {\n    const td = tmplSh.getDataRange().getValues();\n    for (let r = 1; r < td.length; r++) {\n      if (td[r][0] && String(td[r][0])!=='\u0418\u0442\u043e\u0433\u043e' && typeof td[r][4]==='number')\n        tmplLims[String(td[r][0])] = td[r][4];\n    }\n  }\n  const limits = {};\n  ss.getSheets().forEach(sh => {\n    const name = sh.getName();\n    MONTHS_RU.forEach((mon,idx) => {\n      if (!name.startsWith(mon+' ')) return;\n      const yr = parseInt(name.split(' ')[1]);\n      if (isNaN(yr)) return;\n      const key = yr+'-'+String(idx+1).padStart(2,'0');\n      const sd = sh.getDataRange().getValues();\n      const lims = {};\n      for (let r = 1; r < sd.length; r++) {\n        if (sd[r][0] && String(sd[r][0])!=='\u0418\u0442\u043e\u0433\u043e' && typeof sd[r][4]==='number')\n          lims[String(sd[r][0])] = sd[r][4];\n      }\n      limits[key] = categories.map(c => lims[c]||tmplLims[c]||0);\n    });\n  });\n  const now = new Date();\n  for (let i = 0; i < 3; i++) {\n    let m = now.getMonth()+i, y = now.getFullYear();\n    if (m>11){m-=12;y++;}\n    const k = y+'-'+String(m+1).padStart(2,'0');\n    if (!limits[k]) limits[k] = categories.map(c => tmplLims[c]||0);\n  }\n\n  return { expenses:Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes };\n}\n\n// \u2500\u2500 PUSH \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfunction pushAll(data) {\n  const ss = SpreadsheetApp.getActiveSpreadsheet();\n  setupSheets(ss);\n\n  const categories = data.categories || [];\n  const written = { cells:0, comments:0, incomes:0, assets:0 };\n\n  // --- 1. \u041d\u043e\u0432\u044b\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438 ---\n  const dsSh = ss.getSheetByName(SHEET_DAYS);\n  const dsData = dsSh.getDataRange().getValues();\n  const catRowMap = {};\n  for (let r = 1; r < dsData.length; r++) {\n    const c = String(dsData[r][0]||'');\n    if (c && c !== '\u0418\u0442\u043e\u0433\u043e') catRowMap[c] = r;\n  }\n  for (const cat of categories) {\n    if (catRowMap[cat] || cat === '\u0418\u0442\u043e\u0433\u043e') continue;\n    let iRow = dsSh.getLastRow();\n    for (let r = 1; r <= dsSh.getLastRow(); r++) {\n      if (dsSh.getRange(r,1).getValue()==='\u0418\u0442\u043e\u0433\u043e') { iRow = r; break; }\n    }\n    dsSh.insertRowBefore(iRow);\n    dsSh.getRange(iRow,1).setValue(cat);\n    catRowMap[cat] = iRow-1;\n    const tmpl = ss.getSheetByName(SHEET_TEMPLATE);\n    if (tmpl) {\n      const td = tmpl.getDataRange().getValues();\n      let ti = tmpl.getLastRow();\n      for (let r = 0; r < td.length; r++) { if (td[r][0]==='\u0418\u0442\u043e\u0433\u043e') { ti=r+1; break; } }\n      tmpl.insertRowBefore(ti);\n      tmpl.getRange(ti,1).setValue(cat);\n      tmpl.getRange(ti,5).setValue(0);\n    }\n  }\n\n  // --- 2. \u0420\u0430\u0441\u0445\u043e\u0434\u044b \u2192 \u044f\u0447\u0435\u0439\u043a\u0438 \u0432 \"\u041f\u043e \u0434\u043d\u044f\u043c\" ---\n  // \u041f\u0435\u0440\u0435\u0447\u0438\u0442\u044b\u0432\u0430\u0435\u043c \u043f\u043e\u0441\u043b\u0435 \u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0433\u043e \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u0441\u0442\u0440\u043e\u043a\n  const freshData = dsSh.getDataRange().getValues();\n  const freshHeader = freshData[0];\n  const freshCatMap = {};\n  for (let r = 1; r < freshData.length; r++) {\n    const c = String(freshData[r][0]||'');\n    if (c && c !== '\u0418\u0442\u043e\u0433\u043e') freshCatMap[c] = r;\n  }\n  const dateColMap = {};\n  for (let c = 1; c < freshHeader.length; c++) {\n    const d = cellToDate(freshHeader[c]);\n    if (d) dateColMap[fmtDate(d)] = c;\n  }\n\n  // \u0413\u0440\u0443\u043f\u043f\u0438\u0440\u0443\u0435\u043c \u0440\u0430\u0441\u0445\u043e\u0434\u044b \u043f\u043e \u044f\u0447\u0435\u0439\u043a\u0435 (\u0441\u0443\u043c\u043c\u0438\u0440\u0443\u0435\u043c \u0435\u0441\u043b\u0438 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u0437\u0430 \u0434\u0435\u043d\u044c)\n  const cellMap = {};\n  const commentMap = {};\n  for (const exp of (data.expenses||[])) {\n    const catName = categories[exp.cat];\n    if (!catName) continue;\n    const col = dateColMap[exp.date];\n    const row = freshCatMap[catName];\n    if (col===undefined || row===undefined) continue;\n    const key = row+'_'+col;\n    cellMap[key] = (cellMap[key]||0) + exp.amount;\n    if (exp.comment) commentMap[exp.cat+'_'+exp.date] = { cat:exp.cat, date:exp.date, comment:exp.comment, catName };\n  }\n  for (const [key,amount] of Object.entries(cellMap)) {\n    const [r,c] = key.split('_').map(Number);\n    dsSh.getRange(r+1,c+1).setValue(amount);\n    written.cells++;\n  }\n\n  // --- 3. \u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0438 ---\n  const commSh = ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);\n  const commData = commSh.getDataRange().getValues();\n  const existComm = {};\n  for (let r = 1; r < commData.length; r++) {\n    if (commData[r][0]==='' || commData[r][0]===null) continue;\n    const dv = commData[r][1];\n    const ds = dv instanceof Date ? fmtDate(dv) : String(dv);\n    existComm[commData[r][0]+'_'+ds] = r+1;\n  }\n  for (const [key,info] of Object.entries(commentMap)) {\n    if (existComm[key]) commSh.getRange(existComm[key],3).setValue(info.comment);\n    else { commSh.appendRow([info.cat,info.date,info.comment,info.catName]); existComm[key]=commSh.getLastRow(); }\n    written.comments++;\n  }\n\n  // --- 4. \u041b\u0438\u043c\u0438\u0442\u044b ---\n  Object.entries(data.limits||{}).forEach(([key,limArr]) => {\n    if (!Array.isArray(limArr)) return;\n    const [yr,mo] = key.split('-').map(Number);\n    const mSh = getOrCreateMonthSheet(ss, yr, mo-1);\n    const md = mSh.getDataRange().getValues();\n    const mCatRow = {};\n    for (let r = 1; r < md.length; r++) {\n      if (md[r][0] && String(md[r][0])!=='\u0418\u0442\u043e\u0433\u043e') mCatRow[String(md[r][0])] = r+1;\n    }\n    categories.forEach((cat,idx) => {\n      const lim = limArr[idx]; if (lim===undefined) return;\n      if (mCatRow[cat]) { mSh.getRange(mCatRow[cat],5).setValue(lim); return; }\n      let iRow = mSh.getLastRow();\n      for (let r = 1; r <= mSh.getLastRow(); r++) {\n        if (mSh.getRange(r,1).getValue()==='\u0418\u0442\u043e\u0433\u043e') { iRow=r; break; }\n      }\n      mSh.insertRowBefore(iRow);\n      mSh.getRange(iRow,1).setValue(cat);\n      mSh.getRange(iRow,5).setValue(lim);\n    });\n  });\n\n  // --- 5. \u0410\u043a\u0442\u0438\u0432\u044b ---\n  const allBanks = [...(data.banks||[]),...(data.creditBanks||[])];\n  if (allBanks.length && (data.assets||[]).length) {\n    const aSh = ss.getSheetByName(SHEET_ASSETS);\n    const ah = aSh.getDataRange().getValues()[0];\n    const colByBank = {};\n    for (let c = 1; c < ah.length; c++) colByBank[String(ah[c]||'')] = c;\n    for (const bank of allBanks) {\n      if (!colByBank[bank]) {\n        const lc = aSh.getLastColumn();\n        aSh.insertColumnBefore(lc);\n        aSh.getRange(1,lc).setValue(bank);\n        colByBank[bank] = lc;\n      }\n    }\n    const freshA = aSh.getDataRange().getValues();\n    const dateRowMap = {};\n    for (let r = 1; r < freshA.length; r++) {\n      const d = cellToDate(freshA[r][0]);\n      if (d) dateRowMap[fmtDate(d)] = r+1;\n    }\n    for (const a of (data.assets||[])) {\n      const bname = allBanks[a.bank]; if (!bname) continue;\n      const col = colByBank[bname]; if (!col) continue;\n      let row = dateRowMap[a.date];\n      if (!row) {\n        aSh.appendRow([new Date(a.date)]);\n        row = aSh.getLastRow();\n        dateRowMap[a.date] = row;\n        const lc = aSh.getLastColumn();\n        aSh.getRange(row,lc).setFormula('=IF(SUM(B'+row+':'+colLetter(lc-1)+row+')=0,,SUM(B'+row+':'+colLetter(lc-1)+row+'))');\n      }\n      aSh.getRange(row,col).setValue(a.amount);\n      written.assets++;\n    }\n  }\n\n  // --- 6. \u0414\u043e\u0445\u043e\u0434\u044b ---\n  const incSh = ensureSheet(ss, SHEET_INCOME, ['id','date','source','amount','comment','month']);\n  const incData = incSh.getDataRange().getValues();\n  const existInc = {};\n  for (let r = 1; r < incData.length; r++) {\n    if (incData[r][0]) existInc[String(incData[r][0])] = r+1;\n  }\n  for (const inc of (data.incomes||[])) {\n    const row = [inc.id, inc.date, inc.source, inc.amount, inc.comment||'', (inc.date||'').slice(0,7)];\n    if (existInc[inc.id]) incSh.getRange(existInc[inc.id],1,1,row.length).setValues([row]);\n    else { incSh.appendRow(row); existInc[inc.id]=incSh.getLastRow(); }\n    written.incomes++;\n  }\n\n  return written;\n}\n";
+}
+
+
+// ═══ calc.js ═══
+
+// ─── CALCULATOR ─────────────────────────────────────────────────────
+let chartCalc = null;
+
+
+function setCalcUnit(val, btn){
+  document.getElementById('calc-unit').value = val;
+  document.querySelectorAll('.cu-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  calcUpdate();
+}
+
+function calcUpdate(){
+  const start    = parseFloat(document.getElementById('calc-start').value)    || 0;
+  const monthly  = parseFloat(document.getElementById('calc-monthly').value)  || 0;
+  const rate     = parseFloat(document.getElementById('calc-rate').value)     || 0;
+  const duration = parseFloat(document.getElementById('calc-duration').value) || 1;
+  const unit     = document.getElementById('calc-unit').value;
+  const cap      = document.getElementById('calc-cap').value;
+
+  // Convert everything to months (for loop), and days (for daily cap)
+  let months, totalDays;
+  if(unit==='years'){
+    months    = Math.max(1, Math.min(600, Math.round(duration * 12)));
+    totalDays = Math.round(duration * 365);
+  } else if(unit==='days'){
+    totalDays = Math.max(1, Math.round(duration));
+    months    = Math.max(1, Math.round(totalDays / 30.4375));
+  } else {
+    months    = Math.max(1, Math.min(600, Math.round(duration)));
+    totalDays = Math.round(months * 30.4375);
+  }
+
+  const r = rate / 100;
+
+  // Build month-by-month schedule
+  const balances  = [];  // total balance each month
+  const invested  = [];  // cumulative invested each month
+
+  let balance = start;
+  let totalInvested = start;
+
+  for(let mo=1; mo<=months; mo++){
+    // Add monthly contribution at start of month
+    if(mo>1){ balance += monthly; totalInvested += monthly; }
+
+    // Apply interest for this month
+    if(cap==='none'){
+      // Simple interest: apply proportionally
+      balance += balance * (r / 12);
+    } else if(cap==='daily'){
+      const daysInMonth = 30.4375;
+      balance *= Math.pow(1 + r/365, daysInMonth);
+    } else if(cap==='monthly'){
+      balance *= (1 + r/12);
+    } else if(cap==='yearly'){
+      // Apply 1/12 of annual compounding per month
+      balance *= Math.pow(1 + r, 1/12);
+    }
+
+    balances.push(Math.round(balance));
+    invested.push(Math.round(totalInvested));
+  }
+
+  const finalBalance  = balances[months-1] || 0;
+  const finalInvested = invested[months-1]  || 0;
+  const profit        = finalBalance - finalInvested;
+  const yearlyIncome  = months>=12 ? profit/(months/12) : profit*12/months;
+
+  // Effective annual rate
+  const effRate = finalInvested>0
+    ? (Math.pow(finalBalance/finalInvested, 12/months) - 1)*100
+    : 0;
+
+  document.getElementById('calc-total').textContent     = fmtCalc(finalBalance);
+  document.getElementById('calc-invested').textContent  = fmtCalc(finalInvested);
+  document.getElementById('calc-profit').textContent    = fmtCalc(profit);
+  document.getElementById('calc-yearly').textContent    = fmtCalc(Math.round(yearlyIncome));
+  document.getElementById('calc-eff-rate').textContent  = effRate.toFixed(2)+'%';
+  {
+    let lbl;
+    if(unit==='days') lbl = totalDays+' дн';
+    else if(unit==='years') lbl = duration+' год';
+    else lbl = months<12 ? months+' мес' : (months%12===0 ? months/12+' лет' : Math.floor(months/12)+'г '+months%12+'м');
+    document.getElementById('calc-period-lbl').textContent = lbl;
+  }
+
+  // Chart — sample at most 60 points for performance
+  const step = Math.max(1, Math.ceil(months/60));
+  const labels=[], dataTotal=[], dataInvested=[];
+  for(let i=0;i<months;i+=step){
+    labels.push(i+1);
+    dataTotal.push(balances[i]);
+    dataInvested.push(invested[i]);
+  }
+  // Always include last point
+  if((months-1)%step!==0){
+    labels.push(months);
+    dataTotal.push(balances[months-1]);
+    dataInvested.push(invested[months-1]);
+  }
+
+  if(chartCalc) chartCalc.destroy();
+  chartCalc = new Chart(document.getElementById('chartCalc'),{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Итого',data:dataTotal,borderColor:'#1a1a18',backgroundColor:'rgba(26,26,24,.07)',fill:true,tension:0.3,pointRadius:0,borderWidth:2},
+        {label:'Вложено',data:dataInvested,borderColor:'#c8c7c0',backgroundColor:'transparent',fill:false,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>v.dataset.label+': '+fmtCalc(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888',maxTicksLimit:8,callback:(v,i)=>{const mo=labels[i];return mo%12===0?mo/12+'г':mo;}}},y:{grid:{color:'rgba(128,128,128,.08)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}}}}
+  });
+
+  // Yearly table
+  const table = document.getElementById('calc-table');
+  let html='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html+='<tr style="background:var(--bg)"><th style="padding:7px 10px;text-align:left;color:var(--muted);font-weight:500">Год</th><th style="padding:7px 10px;text-align:right;color:var(--muted);font-weight:500">Вложено</th><th style="padding:7px 10px;text-align:right;color:var(--muted);font-weight:500">Проценты</th><th style="padding:7px 10px;text-align:right;color:var(--muted);font-weight:500">Итого</th></tr>';
+  for(let yr=1; yr<=Math.ceil(months/12); yr++){
+    const mo = Math.min(yr*12, months) - 1;
+    const tot = balances[mo]||0;
+    const inv = invested[mo]||0;
+    const prc = tot - inv;
+    const isLast = yr===Math.ceil(months/12);
+    html+=`<tr style="${isLast?'font-weight:600;background:var(--bg)':''}border-top:0.5px solid var(--border)">
+      <td style="padding:8px 10px">${yr} год</td>
+      <td style="padding:8px 10px;text-align:right;color:var(--muted)">${fmtCalc(inv)}</td>
+      <td style="padding:8px 10px;text-align:right;color:var(--green)">${fmtCalc(prc)}</td>
+      <td style="padding:8px 10px;text-align:right">${fmtCalc(tot)}</td>
+    </tr>`;
+  }
+  html+='</table>';
+  table.innerHTML=html;
+}
+
+function fmtCalc(n){
+  return Math.round(n).toLocaleString('ru-RU')+' ₽';
+}
+
+
+// ═══ init.js ═══
+
+// ─── INIT ────────────────────────────────────────────────────────────
+function init(){
+  initOverlays();
+  loadDB();
+  const now=new Date();
+  currentMonth={y:now.getFullYear(),m:now.getMonth()};
+  currentDay=today();
+  document.getElementById('fab').style.display='flex';
+  document.getElementById('fab').textContent='+';
+  if(typeof renderBudget === 'function') renderBudget();
+  // Auto-sync on start if URL configured
+  initSyncWidget();
+  if(DB.syncUrl) autoSyncOnStart();
+  // Auto-push on page close
+  // Автопуш при закрытии отключён — используй кнопку «Выгрузить»
+}
+
+// ── SYNC STATUS WIDGET ──────────────────────────────────────────────
+function setSyncStatus(state, isoTs){
+  const widget = document.getElementById('sync-widget');
+  const dot    = document.getElementById('sync-dot');
+  const text   = document.getElementById('sync-text');
+  if(!widget) return;
+  widget.style.display = 'flex';
+  dot.className = 'sync-dot ' + state;
+  if(state === 'syncing'){
+    text.textContent = 'Синхр…';
+  } else if(state === 'ok' && isoTs){
+    const d = new Date(isoTs);
+    const hhmm = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+    const today = new Date().toDateString() === d.toDateString();
+    text.textContent = today ? hhmm : d.getDate()+'.'+(d.getMonth()+1)+' '+hhmm;
+  } else if(state === 'error'){
+    text.textContent = 'Ошибка';
+  } else {
+    text.textContent = 'Не синхр.';
+  }
+}
+
+
+
+function initSyncWidget(){
+  if(!DB.syncUrl) return;
+  const lastSync = localStorage.getItem('lastSync');
+  setSyncStatus(lastSync ? 'ok' : 'none', lastSync);
+}
+
+let _syncInProgress = false;
+
+async function autoSyncOnStart(){
+  if(_syncInProgress) return;
+  _syncInProgress = true;
+  setSyncStatus('syncing');
+  try{
+    const d = await doSyncRequest({action:'pull'});
+    if(d.error){ setSyncStatus('error'); _syncInProgress = false; return; }
+    mergePullData(d);
+    // Save quietly — don't mark dirty (pull data shouldn't trigger push)
+    DB._dirty = false;
+    localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
+    renderBudget();
+    const ts = new Date().toISOString();
+    localStorage.setItem('lastSync', ts);
+    setSyncStatus('ok', ts);
+  } catch(e){ setSyncStatus('error'); }
+  _syncInProgress = false;
+}
+
+function buildPayload(){
+  return {
+    expenses: DB.expenses,
+    assets: DB.assets,
+    categories: DB.categories,
+    catColors: DB.catColors || {},
+    banks: DB.banks,
+    creditBanks: DB.creditBanks || [],
+    limits: DB.limits,
+    incomes: DB.incomes || []
+  };
+}
+
+let _lastCloseSync = 0;
+
+function autoSyncOnClose(){
+  // Debounce: iOS fires pagehide on every background switch, limit to once per 30s
+  const now = Date.now();
+  if(!DB.syncUrl || !DB._dirty) return;
+  if(now - _lastCloseSync < 30000) return;
+  _lastCloseSync = now;
+  DB._dirty = false;
+  localStorage.setItem('lastSync', new Date().toISOString());
+  // Use pushDiff via GET — reliable across redirects
+  // Fire-and-forget each operation, no await needed here
+  const data = buildPayload();
+  _fireAndForgetPush(data);
+}
+
+function _fireAndForgetPush(data) {
+  // Build minimal URL-safe requests and fire them all
+  const urls = buildPushUrls(data);
+  urls.forEach(url => {
+    // Use sendBeacon for reliability at page close
+    if(navigator.sendBeacon && url.length < 2000){
+      navigator.sendBeacon(url);
+    } else {
+      fetch(url, {method:'GET', keepalive:true}).catch(()=>{});
+    }
+  });
+}
+
+function buildPushUrls(data) {
+  const urls = [];
+  const base = DB.syncUrl;
+  const encode = (obj) => {
+    const j = JSON.stringify(obj, null, 0);
+    return base + '?action=push&data=' + encodeURIComponent(btoa(unescape(encodeURIComponent(j)))) + '&enc=b64';
+  };
+
+  // Expenses grouped by date
+  const byDate = {};
+  (data.expenses||[]).forEach(e => { if(!byDate[e.date]) byDate[e.date]=[]; byDate[e.date].push(e); });
+  Object.entries(byDate).forEach(([date, exps]) => {
+    const url = encode({op:'expenses', date, expenses:exps, categories:data.categories});
+    if(url.length <= 1600) urls.push(url);
+    else exps.forEach(e => urls.push(encode({op:'expenses', date, expenses:[e], categories:data.categories})));
+  });
+
+  // Incomes
+  (data.incomes||[]).forEach(inc => urls.push(encode({op:'incomes', incomes:[inc]})));
+
+  return urls;
+}
+
+function mergePullData(d){
+  if(d.categories && d.categories.length) DB.categories = d.categories;
+  if(d.limits) Object.assign(DB.limits, d.limits);
+
+  // Merge expenses — preserve app-only comments
+  if(d.expenses && d.expenses.length){
+    const appComments = {};
+    DB.expenses.forEach(e => { if(e.comment) appComments[e.id] = e.comment; });
+    const appOnly = DB.expenses.filter(e => !e.id.startsWith('gs_'));
+    const sheetEntries = d.expenses.map(e => ({...e, comment: e.comment || appComments[e.id] || ''}));
+    DB.expenses = [...appOnly, ...sheetEntries];
+  }
+
+  // Merge assets — sheet wins, preserve app-only entries
+  if(d.assets && d.assets.length){
+    const appOnly = DB.assets.filter(a => !String(a.id||'').startsWith('gs_asset_'));
+    DB.assets = [...appOnly, ...d.assets];
+  }
+
+  // Merge incomes
+  if(d.incomes && d.incomes.length){
+    const appOnlyInc = DB.incomes.filter(i => !String(i.id||'').startsWith('gs_inc_'));
+    DB.incomes = [...appOnlyInc, ...d.incomes];
+  }
+
+  // Merge banks — add any new banks from sheet not yet in app
+  if(d.banks && d.banks.length){
+    d.banks.forEach(b => { if(!DB.banks.includes(b)) DB.banks.push(b); });
+  }
+  if(d.creditBanks && d.creditBanks.length){
+    if(!DB.creditBanks) DB.creditBanks = [];
+    d.creditBanks.forEach(b => { if(!DB.creditBanks.includes(b)) DB.creditBanks.push(b); });
+  }
+}
+
+
+
+
+
+loadAppsScriptCode().then(() => init());
+
+</script>
 
 </body>
 </html>
