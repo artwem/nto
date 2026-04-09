@@ -68,7 +68,7 @@ function buildPayload(){
 
 function mergePullData(d){
   if(d.categories && d.categories.length) DB.categories = d.categories;
-  if(d.catColors && Object.keys(d.catColors).length) DB.catColors = d.catColors;
+  if(d.catColors !== undefined) DB.catColors = d.catColors;
   if(d.limits) Object.assign(DB.limits, d.limits);
 
   // Merge expenses:

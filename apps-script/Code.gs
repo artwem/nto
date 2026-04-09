@@ -121,7 +121,7 @@ function setupSheets(ss) {
   ensureSheet(ss, SHEET_ASSETS, ['Дата','Сбер','Альфа','Тинь','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ','КРЕДИТ(СПЛИТ)','Общий актив']);
   ensureSheet(ss, SHEET_INCOME, ['id','date','source','amount','comment','month']);
   ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);
-  ensureSheet(ss, SHEET_COLORS, ['setting','value']);
+  ensureSheet(ss, SHEET_COLORS, ['Категория','Цвет']);
 }
 
 function getOrCreateMonthSheet(ss, yr, mo) {
@@ -267,17 +267,20 @@ function pullAll() {
     if (!limits[k]) limits[k] = categories.map(c => tmplLims[c]||0);
   }
 
-  // Read catColors from Настройки sheet
+  // Read catColors from Настройки sheet — format: Категория | Цвет
   let catColors = {};
   const colorSh = ss.getSheetByName(SHEET_COLORS);
   if (colorSh) {
     const cd = colorSh.getDataRange().getValues();
+    // Build catName → color map
+    const colorByCat = {};
     for (let r = 1; r < cd.length; r++) {
-      if (cd[r][0] === 'catColors') {
-        try { catColors = JSON.parse(cd[r][1]); } catch(_) {}
-        break;
-      }
+      if (cd[r][0] && cd[r][1]) colorByCat[String(cd[r][0])] = String(cd[r][1]);
     }
+    // Convert to index-based using categories array
+    categories.forEach((cat, idx) => {
+      if (colorByCat[cat]) catColors[idx] = colorByCat[cat];
+    });
   }
 
   return { expenses: Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes, catColors };
@@ -325,17 +328,35 @@ function pushAll(data) {
   }
 
   // --- 1c. Сохранить цвета категорий на лист "Настройки" ---
+  // --- 1c. Сохранить цвета категорий: Категория | Цвет ---
   const catColors = data.catColors || {};
-  if (Object.keys(catColors).length) {
-    const colorSh = ensureSheet(ss, SHEET_COLORS, ['setting','value']);
+  {
+    const colorSh = ensureSheet(ss, SHEET_COLORS, ['Категория','Цвет']);
     const colorData = colorSh.getDataRange().getValues();
-    let colorRow = -1;
+    const colorRowMap = {};
     for (let r = 1; r < colorData.length; r++) {
-      if (colorData[r][0] === 'catColors') { colorRow = r+1; break; }
+      if (colorData[r][0]) colorRowMap[String(colorData[r][0])] = r + 1;
     }
-    const colorJson = JSON.stringify(catColors);
-    if (colorRow > 0) colorSh.getRange(colorRow, 2).setValue(colorJson);
-    else colorSh.appendRow(['catColors', colorJson]);
+    // Apply renames: update category name in color sheet too
+    renames.forEach(function(r) {
+      if (colorRowMap[r.from]) {
+        colorSh.getRange(colorRowMap[r.from], 1).setValue(r.to);
+        colorRowMap[r.to] = colorRowMap[r.from];
+        delete colorRowMap[r.from];
+      }
+    });
+    // Write each category color
+    categories.forEach((cat, idx) => {
+      const color = catColors[idx] || catColors[String(idx)] || '';
+      if (!color) return;
+      if (colorRowMap[cat]) {
+        colorSh.getRange(colorRowMap[cat], 2).setValue(color);
+      } else {
+        colorSh.appendRow([cat, color]);
+        colorRowMap[cat] = colorSh.getLastRow();
+      }
+    });
+    written.colors = Object.keys(catColors).length;
   }
 
   // --- 2. Расходы → ячейки в "По дням" ---
