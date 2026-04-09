@@ -17,34 +17,29 @@ const DEFAULT_CATS = [
 ];
 const DEFAULT_LIMITS = [15000,3000,1500,20000,8000,5000,5000,3000,4000,5000,3000,3000,2000,4000,5000,5000];
 
-// Единственная точка входа — doGet
-function doGet(e) {
-  const p = e.parameter || {};
-  const action = p.action || '';
-  const cb = p.callback || null; // JSONP callback name
+// POST с Content-Type: text/plain — без CORS preflight
+function doPost(e) {
   try {
-    if (action === 'ping') return out({ ok: true, version: '9.1' }, cb);
-    if (action === 'pull') return out(pullAll(), cb);
-    if (action === 'push') {
-      const raw = p.data || '{}';
-      const data = JSON.parse(raw);
-      return out({ success: true, written: pushAll(data) }, cb);
-    }
-    return out({ error: 'Unknown action: ' + action }, cb);
+    const body = JSON.parse(e.postData.contents);
+    const action = body.action || '';
+    if (action === 'ping') return out({ ok: true, version: '9.2' });
+    if (action === 'pull') return out(pullAll());
+    if (action === 'push') return out({ success: true, written: pushAll(body.data || {}) });
+    return out({ error: 'Unknown action: ' + action });
   } catch(err) {
-    return out({ error: err.message }, cb);
+    return out({ error: err.message });
   }
 }
 
-// doPost тоже поддерживаем на всякий случай
-function doPost(e) { return doGet(e); }
+// GET оставляем для проверки вручную в браузере
+function doGet(e) {
+  const action = (e.parameter && e.parameter.action) || '';
+  if (action === 'ping') return out({ ok: true, version: '9.2' });
+  if (action === 'pull') return out(pullAll());
+  return out({ info: 'Budget Tracker API v9.2. Use POST for push.' });
+}
 
-function out(obj, callback) {
-  if (callback) {
-    // JSONP — оборачиваем в callback() для обхода CORS
-    return ContentService.createTextOutput(callback + '(' + JSON.stringify(obj) + ')')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
+function out(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
