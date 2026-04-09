@@ -75,7 +75,7 @@ async function testSync(){
   try {
     const d = await syncRequest('ping');
     el.textContent = d.ok ? '✓ Подключено' : '✗ Ошибка';
-    toast(d.ok ? 'OK tz='+d.ss_tz+' sample='+d.sample_date : 'Ошибка: '+(d.error||'?'));
+    toast(d.ok ? 'Подключение успешно!' : 'Ошибка: '+(d.error||'?'));
   } catch(e) {
     el.textContent = '✗ Недоступно';
     toast('Ошибка: ' + e.message);
@@ -97,7 +97,10 @@ async function pullFromSheets(){
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
-    toast('✓ Загружено из таблицы!');
+    const dbg = d.debug_first_exp;
+    const dates = d.debug_date_sample;
+    if(dbg) console.log('[pull] first expense:', JSON.stringify(dbg), 'date_sample:', dates);
+    toast('✓ Загружено. Первая запись: cat='+( dbg&&dbg.cat)+' date='+(dbg&&dbg.date));
   } catch(e) {
     setSyncStatus('error');
     toast('Ошибка загрузки: ' + e.message);

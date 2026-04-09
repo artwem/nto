@@ -22,17 +22,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action || '';
-    if (action === 'ping') {
-      const now = new Date();
-      return out({
-        ok: true, version: '9.2',
-        tz: Session.getScriptTimeZone(),
-        ss_tz: SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(),
-        sample_date: Utilities.formatDate(new Date(2026,3,9), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
-        sample_utc: Utilities.formatDate(new Date(2026,3,9), 'UTC', 'yyyy-MM-dd'),
-        raw_date: new Date(2026,3,9).toString()
-      });
-    }
+    if (action === 'ping') return out({ ok: true, version: '9.2' });
     if (action === 'pull') return out(pullAll());
     if (action === 'push') return out({ success: true, written: pushAll(body.data || {}) });
     return out({ error: 'Unknown action: ' + action });
@@ -263,7 +253,13 @@ function pullAll() {
     if (!limits[k]) limits[k] = categories.map(c => tmplLims[c]||0);
   }
 
-  return { expenses:Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes };
+  const expArr = Object.values(expenseMap);
+  return {
+    expenses: expArr,
+    categories, limits, assets, banks, creditBanks, incomes,
+    debug_first_exp: expArr[0] || null,
+    debug_date_sample: Object.keys(dateColMap).slice(0,3)
+  };
 }
 
 // ── PUSH ──────────────────────────────────────────────────────────────
