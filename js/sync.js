@@ -97,10 +97,7 @@ async function pullFromSheets(){
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
-    const dbg = d.debug_first_exp;
-    const dates = d.debug_date_sample;
-    if(dbg) console.log('[pull] first expense:', JSON.stringify(dbg), 'date_sample:', dates);
-    toast('✓ Загружено. Первая запись: cat='+( dbg&&dbg.cat)+' date='+(dbg&&dbg.date));
+    toast('✓ Загружено из таблицы!');
   } catch(e) {
     setSyncStatus('error');
     toast('Ошибка загрузки: ' + e.message);

@@ -253,13 +253,7 @@ function pullAll() {
     if (!limits[k]) limits[k] = categories.map(c => tmplLims[c]||0);
   }
 
-  const expArr = Object.values(expenseMap);
-  return {
-    expenses: expArr,
-    categories, limits, assets, banks, creditBanks, incomes,
-    debug_first_exp: expArr[0] || null,
-    debug_date_sample: Object.keys(dateColMap).slice(0,3)
-  };
+  return { expenses: Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes };
 }
 
 // ── PUSH ──────────────────────────────────────────────────────────────
