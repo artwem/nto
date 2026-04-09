@@ -446,75 +446,63 @@ function pushAll(data) {
   const allBanks = [...regularBanks, ...creditBanksList];
   if (allBanks.length && (data.assets||[]).length) {
     const aSh = ss.getSheetByName(SHEET_ASSETS);
-    let ah = aSh.getDataRange().getValues()[0];
-
-    // Find the "Общий актив" column — always the last column
     const totalColName = 'Общий актив';
-    let totalCol = -1;
-    for (let c = 0; c < ah.length; c++) {
-      if (String(ah[c]||'').trim() === totalColName) { totalCol = c + 1; break; }
-    }
-    // If no total column yet, it's the last one
-    if (totalCol < 0) totalCol = ah.length;
 
-    // Build colByBank — exclude Дата and Общий актив
-    const colByBank = {};
-    for (let c = 0; c < ah.length; c++) {
-      const name = String(ah[c]||'').trim();
-      if (name && name !== 'Дата' && name !== totalColName) colByBank[name] = c + 1;
+    // Step 1: build header map from current sheet
+    function getHeaderMap() {
+      const header = aSh.getRange(1, 1, 1, aSh.getLastColumn()).getValues()[0];
+      const map = {};
+      header.forEach((name, i) => {
+        const n = String(name||'').trim();
+        if (n) map[n] = i + 1; // 1-based column number
+      });
+      return map;
     }
 
-    // Add new banks — insert BEFORE "Общий актив" column
+    let headerMap = getHeaderMap();
+
+    // Step 2: ensure "Общий актив" column exists as last column
+    if (!headerMap[totalColName]) {
+      const newCol = aSh.getLastColumn() + 1;
+      aSh.getRange(1, newCol).setValue(totalColName);
+      headerMap = getHeaderMap();
+    }
+
+    // Step 3: add new banks BEFORE "Общий актив" by appending a new column
+    // then move "Общий актив" header to the right
     for (const bank of allBanks) {
-      if (!colByBank[bank]) {
-        // Insert before totalCol
-        aSh.insertColumnBefore(totalCol);
-        // Clear entire new column — insertColumnBefore copies data from neighbour
-        const lastRow = Math.max(aSh.getLastRow(), 1);
-        aSh.getRange(1, totalCol, lastRow, 1).clearContent();
-        // Set header name
-        aSh.getRange(1, totalCol).setValue(bank);
-        colByBank[bank] = totalCol;
-        totalCol++; // Общий актив moved right
-        ah = aSh.getDataRange().getValues()[0];
+      if (!headerMap[bank]) {
+        const totalColNum = headerMap[totalColName];
+        // Append a new empty column at the end
+        const newCol = aSh.getLastColumn() + 1;
+        aSh.getRange(1, newCol).setValue(totalColName); // move total header to end
+        aSh.getRange(1, totalColNum).setValue(bank);    // bank takes old total position
+        headerMap = getHeaderMap();
       }
     }
 
-    // Rebuild colByBank after possible insertions
-    ah = aSh.getDataRange().getValues()[0];
-    for (let c = 0; c < ah.length; c++) {
-      const name = String(ah[c]||'').trim();
-      if (name && name !== 'Дата' && name !== totalColName) colByBank[name] = c + 1;
-    }
-    // Recalculate totalCol
-    totalCol = ah.length; // last column
-    for (let c = 0; c < ah.length; c++) {
-      if (String(ah[c]||'').trim() === totalColName) { totalCol = c + 1; break; }
-    }
+    // Step 4: final header map
+    headerMap = getHeaderMap();
+    const totalCol = headerMap[totalColName];
 
-    // Calculate total value: sum regular banks minus credit banks
-    function calcTotal(rowData) {
-      let total = 0;
-      regularBanks.forEach(b => {
-        const col = colByBank[b];
-        if (col) total += parseFloat(rowData[col-1]) || 0;
-      });
-      creditBanksList.forEach(b => {
-        const col = colByBank[b];
-        if (col) total -= parseFloat(rowData[col-1]) || 0;
-      });
-      return total;
-    }
+    // Build colByBank (exclude Дата and Общий актив)
+    const colByBank = {};
+    Object.entries(headerMap).forEach(([name, col]) => {
+      if (name !== 'Дата' && name !== totalColName) colByBank[name] = col;
+    });
 
-    // Build date→row map (before writing new values)
-    const freshA = aSh.getDataRange().getValues();
+    // Step 5: build date→row map
+    const lastRow = aSh.getLastRow();
     const dateRowMap = {};
-    for (let r = 1; r < freshA.length; r++) {
-      const ds = cellToDateStr(freshA[r][0]);
-      if (ds) dateRowMap[ds] = r+1;
+    if (lastRow > 1) {
+      const dateCol = aSh.getRange(2, 1, lastRow - 1, 1).getValues();
+      dateCol.forEach((row, i) => {
+        const ds = cellToDateStr(row[0]);
+        if (ds) dateRowMap[ds] = i + 2; // 1-based row
+      });
     }
 
-    // Write all bank values first
+    // Step 6: write bank values
     for (const a of (data.assets||[])) {
       if (!a.date || typeof a.date !== 'string' || !a.date.match(/^\d{4}-\d{2}-\d{2}$/)) continue;
       const bname = allBanks[a.bank] || a.bankName;
@@ -523,21 +511,34 @@ function pushAll(data) {
       if (!col) continue;
       let row = dateRowMap[a.date];
       if (!row) {
-        aSh.appendRow([String(a.date)]);
-        aSh.getRange(aSh.getLastRow(), 1).setNumberFormat('@');
-        row = aSh.getLastRow();
+        // New date row — append
+        const newRow = aSh.getLastRow() + 1;
+        aSh.getRange(newRow, 1).setValue(a.date);
+        aSh.getRange(newRow, 1).setNumberFormat('@');
+        row = newRow;
         dateRowMap[a.date] = row;
       }
       aSh.getRange(row, col).setValue(a.amount);
       written.assets++;
     }
 
-    // Recalculate total for ALL rows AFTER writing bank values
-    const finalData = aSh.getDataRange().getValues();
-    for (let r = 1; r < finalData.length; r++) {
-      if (!cellToDateStr(finalData[r][0])) continue; // skip header/empty rows
-      const total = calcTotal(finalData[r]);
-      aSh.getRange(r + 1, totalCol).setValue(total !== 0 ? total : '');
+    // Step 7: recalculate "Общий актив" for every data row
+    const finalLastRow = aSh.getLastRow();
+    if (finalLastRow > 1 && totalCol) {
+      const allData = aSh.getRange(2, 1, finalLastRow - 1, aSh.getLastColumn()).getValues();
+      allData.forEach((rowData, i) => {
+        if (!cellToDateStr(rowData[0])) return; // skip empty rows
+        let total = 0;
+        regularBanks.forEach(b => {
+          const col = colByBank[b];
+          if (col) total += parseFloat(rowData[col - 1]) || 0;
+        });
+        creditBanksList.forEach(b => {
+          const col = colByBank[b];
+          if (col) total -= parseFloat(rowData[col - 1]) || 0;
+        });
+        aSh.getRange(i + 2, totalCol).setValue(total || '');
+      });
     }
   }
 
