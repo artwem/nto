@@ -1,5 +1,6 @@
 // ─── INIT ────────────────────────────────────────────────────────────
 function init(){
+  initOverlays();
   loadDB();
   const now=new Date();
   currentMonth={y:now.getFullYear(),m:now.getMonth()};

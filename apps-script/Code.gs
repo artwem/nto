@@ -158,12 +158,16 @@ function pullAll() {
     }
   }
 
-  // Комментарии
+  // Комментарии — дата может быть Date-объектом или строкой
   const commSh = ss.getSheetByName(SHEET_COMMENTS);
   if (commSh) {
     const cd = commSh.getDataRange().getValues();
     for (let r = 1; r < cd.length; r++) {
-      const key = cd[r][0] + '_' + String(cd[r][1]).replace(/-/g,'');
+      const catIdx = cd[r][0];
+      if (catIdx === '' || catIdx === null || catIdx === undefined) continue;
+      const dateVal = cd[r][1];
+      const dateStr = dateVal instanceof Date ? fmtDate(dateVal) : String(dateVal);
+      const key = catIdx + '_' + dateStr.replace(/-/g,'');
       if (expenseMap[key] && cd[r][2]) expenseMap[key].comment = String(cd[r][2]);
     }
   }
@@ -325,7 +329,10 @@ function pushAll(data) {
   const commData = commSh.getDataRange().getValues();
   const existComm = {};
   for (let r = 1; r < commData.length; r++) {
-    if (commData[r][0]!=='') existComm[commData[r][0]+'_'+commData[r][1]] = r+1;
+    if (commData[r][0]==='' || commData[r][0]===null) continue;
+    const dv = commData[r][1];
+    const ds = dv instanceof Date ? fmtDate(dv) : String(dv);
+    existComm[commData[r][0]+'_'+ds] = r+1;
   }
   for (const [key,info] of Object.entries(commentMap)) {
     if (existComm[key]) commSh.getRange(existComm[key],3).setValue(info.comment);

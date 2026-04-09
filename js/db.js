@@ -145,6 +145,9 @@ function toast(msg){
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 // Close on backdrop click
-document.querySelectorAll('.overlay').forEach(el=>{
-  el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});
-});
+// Overlay click-outside handler — runs after full DOM load
+function initOverlays(){
+  document.querySelectorAll('.overlay').forEach(el=>{
+    el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});
+  });
+}
