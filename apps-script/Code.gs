@@ -467,12 +467,15 @@ function pushAll(data) {
     // Add new banks — insert BEFORE "Общий актив" column
     for (const bank of allBanks) {
       if (!colByBank[bank]) {
-        // Insert before totalCol, then totalCol shifts right
+        // Insert before totalCol
         aSh.insertColumnBefore(totalCol);
+        // Clear entire new column — insertColumnBefore copies data from neighbour
+        const lastRow = Math.max(aSh.getLastRow(), 1);
+        aSh.getRange(1, totalCol, lastRow, 1).clearContent();
+        // Set header name
         aSh.getRange(1, totalCol).setValue(bank);
         colByBank[bank] = totalCol;
         totalCol++; // Общий актив moved right
-        // Re-read header
         ah = aSh.getDataRange().getValues()[0];
       }
     }
@@ -489,25 +492,21 @@ function pushAll(data) {
       if (String(ah[c]||'').trim() === totalColName) { totalCol = c + 1; break; }
     }
 
-    // Build formula: sum regular banks minus credit banks
-    function buildTotalFormula(row) {
-      const regularCols = regularBanks.map(b => colByBank[b]).filter(Boolean);
-      const creditCols = creditBanksList.map(b => colByBank[b]).filter(Boolean);
-      if (!regularCols.length) return '';
-      const sumParts = regularCols.map(c => colLetter(c)+row).join('+');
-      const subParts = creditCols.map(c => colLetter(c)+row).join('+');
-      if (subParts) return '='+sumParts+'-'+subParts;
-      return '='+sumParts;
+    // Calculate total value: sum regular banks minus credit banks
+    function calcTotal(rowData) {
+      let total = 0;
+      regularBanks.forEach(b => {
+        const col = colByBank[b];
+        if (col) total += parseFloat(rowData[col-1]) || 0;
+      });
+      creditBanksList.forEach(b => {
+        const col = colByBank[b];
+        if (col) total -= parseFloat(rowData[col-1]) || 0;
+      });
+      return total;
     }
 
-    // Update total formula for ALL existing rows
-    const allData = aSh.getDataRange().getValues();
-    for (let r = 1; r < allData.length; r++) {
-      const formula = buildTotalFormula(r + 1);
-      if (formula) aSh.getRange(r + 1, totalCol).setFormula(formula);
-    }
-
-    // Build date→row map
+    // Build date→row map (before writing new values)
     const freshA = aSh.getDataRange().getValues();
     const dateRowMap = {};
     for (let r = 1; r < freshA.length; r++) {
@@ -515,6 +514,7 @@ function pushAll(data) {
       if (ds) dateRowMap[ds] = r+1;
     }
 
+    // Write all bank values first
     for (const a of (data.assets||[])) {
       if (!a.date || typeof a.date !== 'string' || !a.date.match(/^\d{4}-\d{2}-\d{2}$/)) continue;
       const bname = allBanks[a.bank] || a.bankName;
@@ -527,12 +527,17 @@ function pushAll(data) {
         aSh.getRange(aSh.getLastRow(), 1).setNumberFormat('@');
         row = aSh.getLastRow();
         dateRowMap[a.date] = row;
-        // Set total formula for new row
-        const formula = buildTotalFormula(row);
-        if (formula) aSh.getRange(row, totalCol).setFormula(formula);
       }
       aSh.getRange(row, col).setValue(a.amount);
       written.assets++;
+    }
+
+    // Recalculate total for ALL rows AFTER writing bank values
+    const finalData = aSh.getDataRange().getValues();
+    for (let r = 1; r < finalData.length; r++) {
+      if (!cellToDateStr(finalData[r][0])) continue; // skip header/empty rows
+      const total = calcTotal(finalData[r]);
+      aSh.getRange(r + 1, totalCol).setValue(total !== 0 ? total : '');
     }
   }
 
