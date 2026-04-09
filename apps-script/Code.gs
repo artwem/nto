@@ -441,47 +441,97 @@ function pushAll(data) {
   });
 
   // --- 5. Активы ---
-  const allBanks = [...(data.banks||[]),...(data.creditBanks||[])];
+  const regularBanks = data.banks || [];
+  const creditBanksList = data.creditBanks || [];
+  const allBanks = [...regularBanks, ...creditBanksList];
   if (allBanks.length && (data.assets||[]).length) {
     const aSh = ss.getSheetByName(SHEET_ASSETS);
-    const ah = aSh.getDataRange().getValues()[0];
+    let ah = aSh.getDataRange().getValues()[0];
+
+    // Find the "Общий актив" column — always the last column
+    const totalColName = 'Общий актив';
+    let totalCol = -1;
+    for (let c = 0; c < ah.length; c++) {
+      if (String(ah[c]||'').trim() === totalColName) { totalCol = c + 1; break; }
+    }
+    // If no total column yet, it's the last one
+    if (totalCol < 0) totalCol = ah.length;
+
+    // Build colByBank — exclude Дата and Общий актив
     const colByBank = {};
-    // c is 0-based array index; getRange needs 1-based → store c+1
     for (let c = 0; c < ah.length; c++) {
       const name = String(ah[c]||'').trim();
-      if (name && name !== 'Дата') colByBank[name] = c + 1;
+      if (name && name !== 'Дата' && name !== totalColName) colByBank[name] = c + 1;
     }
+
+    // Add new banks — insert BEFORE "Общий актив" column
     for (const bank of allBanks) {
       if (!colByBank[bank]) {
-        const lc = aSh.getLastColumn();
-        aSh.insertColumnBefore(lc);
-        aSh.getRange(1,lc).setValue(bank);
-        colByBank[bank] = lc;
+        // Insert before totalCol, then totalCol shifts right
+        aSh.insertColumnBefore(totalCol);
+        aSh.getRange(1, totalCol).setValue(bank);
+        colByBank[bank] = totalCol;
+        totalCol++; // Общий актив moved right
+        // Re-read header
+        ah = aSh.getDataRange().getValues()[0];
       }
     }
+
+    // Rebuild colByBank after possible insertions
+    ah = aSh.getDataRange().getValues()[0];
+    for (let c = 0; c < ah.length; c++) {
+      const name = String(ah[c]||'').trim();
+      if (name && name !== 'Дата' && name !== totalColName) colByBank[name] = c + 1;
+    }
+    // Recalculate totalCol
+    totalCol = ah.length; // last column
+    for (let c = 0; c < ah.length; c++) {
+      if (String(ah[c]||'').trim() === totalColName) { totalCol = c + 1; break; }
+    }
+
+    // Build formula: sum regular banks minus credit banks
+    function buildTotalFormula(row) {
+      const regularCols = regularBanks.map(b => colByBank[b]).filter(Boolean);
+      const creditCols = creditBanksList.map(b => colByBank[b]).filter(Boolean);
+      if (!regularCols.length) return '';
+      const sumParts = regularCols.map(c => colLetter(c)+row).join('+');
+      const subParts = creditCols.map(c => colLetter(c)+row).join('+');
+      if (subParts) return '='+sumParts+'-'+subParts;
+      return '='+sumParts;
+    }
+
+    // Update total formula for ALL existing rows
+    const allData = aSh.getDataRange().getValues();
+    for (let r = 1; r < allData.length; r++) {
+      const formula = buildTotalFormula(r + 1);
+      if (formula) aSh.getRange(r + 1, totalCol).setFormula(formula);
+    }
+
+    // Build date→row map
     const freshA = aSh.getDataRange().getValues();
     const dateRowMap = {};
     for (let r = 1; r < freshA.length; r++) {
       const ds = cellToDateStr(freshA[r][0]);
       if (ds) dateRowMap[ds] = r+1;
     }
+
     for (const a of (data.assets||[])) {
-      // Validate date format — must be YYYY-MM-DD string
       if (!a.date || typeof a.date !== 'string' || !a.date.match(/^\d{4}-\d{2}-\d{2}$/)) continue;
-      const bname = allBanks[a.bank]; if (!bname) continue;
-      const col = colByBank[bname]; if (!col) continue;
+      const bname = allBanks[a.bank] || a.bankName;
+      if (!bname) continue;
+      const col = colByBank[bname];
+      if (!col) continue;
       let row = dateRowMap[a.date];
       if (!row) {
-        if (!a.date || !String(a.date).match(/^\d{4}-\d{2}-\d{2}$/)) continue;
-        // Store as plain text to avoid ALL timezone/serial issues
         aSh.appendRow([String(a.date)]);
-        aSh.getRange(aSh.getLastRow(), 1).setNumberFormat('@'); // @ = plain text format
+        aSh.getRange(aSh.getLastRow(), 1).setNumberFormat('@');
         row = aSh.getLastRow();
         dateRowMap[a.date] = row;
-        const lc = aSh.getLastColumn();
-        aSh.getRange(row,lc).setFormula('=IF(SUM(B'+row+':'+colLetter(lc-1)+row+')=0,,SUM(B'+row+':'+colLetter(lc-1)+row+'))');
+        // Set total formula for new row
+        const formula = buildTotalFormula(row);
+        if (formula) aSh.getRange(row, totalCol).setFormula(formula);
       }
-      aSh.getRange(row,col).setValue(a.amount);
+      aSh.getRange(row, col).setValue(a.amount);
       written.assets++;
     }
   }
