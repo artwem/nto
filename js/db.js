@@ -104,7 +104,10 @@ function monthKey(y,m){return y+'-'+String(m+1).padStart(2,'0')}
 function fmt(n){return Math.round(n).toLocaleString('ru-RU')+'₽'}
 function fmtShort(n){if(Math.abs(n)>=1000)return Math.round(n/1000)+'к';return Math.round(n)+''}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
-function today(){return new Date().toISOString().split('T')[0]}
+function today(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 
 function getLimits(y,m){
   const k = monthKey(y,m);

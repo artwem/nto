@@ -46,13 +46,15 @@ function out(obj) {
 
 // ── HELPERS ────────────────────────────────────────────────────────────
 function fmtDate(d) {
-  return d.getFullYear() + '-' +
-    String(d.getMonth()+1).padStart(2,'0') + '-' +
-    String(d.getDate()).padStart(2,'0');
+  // Use UTC to avoid timezone shift (Google Sheets dates are midnight UTC)
+  return d.getUTCFullYear() + '-' +
+    String(d.getUTCMonth()+1).padStart(2,'0') + '-' +
+    String(d.getUTCDate()).padStart(2,'0');
 }
 
 function cellToDate(v) {
   if (v instanceof Date) return v;
+  // Google Sheets serial: days since 1899-12-30, stored as UTC midnight
   if (typeof v === 'number' && v > 40000)
     return new Date(Math.round((v - 25569) * 86400000));
   return null;
@@ -88,7 +90,7 @@ function setupSheets(ss) {
   if (!ss.getSheetByName(SHEET_DAYS)) {
     const ds = ss.insertSheet(SHEET_DAYS);
     const yr = new Date().getFullYear();
-    const dates = [null];
+    const dates = [''];
     for (let d = new Date(yr,0,1); d.getFullYear()===yr; d.setDate(d.getDate()+1))
       dates.push(new Date(d));
     ds.getRange(1,1,1,dates.length).setValues([dates]);
@@ -211,7 +213,7 @@ function pullAll() {
         const num = typeof v==='number' ? v : parseFloat(String(v).replace(/[^\d.]/g,''));
         if (isNaN(num)) continue;
         assets.push({ id:'gs_a_'+allB.indexOf(name)+'_'+ds.replace(/-/g,''),
-          bank:allB.indexOf(name), amount:Math.abs(num), date:ds });
+          bank:allB.indexOf(name), bankName:name, amount:Math.abs(num), date:ds });
       }
     }
   }
@@ -397,7 +399,10 @@ function pushAll(data) {
       const col = colByBank[bname]; if (!col) continue;
       let row = dateRowMap[a.date];
       if (!row) {
-        aSh.appendRow([new Date(a.date)]);
+        if (!a.date) continue; // skip if no date
+        const dateObj = new Date(a.date + 'T00:00:00Z'); // force UTC midnight
+        if (isNaN(dateObj.getTime())) continue; // skip invalid dates
+        aSh.appendRow([dateObj]);
         row = aSh.getLastRow();
         dateRowMap[a.date] = row;
         const lc = aSh.getLastColumn();
@@ -416,7 +421,9 @@ function pushAll(data) {
     if (incData[r][0]) existInc[String(incData[r][0])] = r+1;
   }
   for (const inc of (data.incomes||[])) {
-    const row = [inc.id, inc.date, inc.source, inc.amount, inc.comment||'', (inc.date||'').slice(0,7)];
+    const incDateStr = inc.date instanceof Date ? fmtDate(inc.date) : String(inc.date||'');
+    if (!incDateStr) continue;
+    const row = [inc.id, incDateStr, inc.source, inc.amount, inc.comment||'', incDateStr.slice(0,7)];
     if (existInc[inc.id]) incSh.getRange(existInc[inc.id],1,1,row.length).setValues([row]);
     else { incSh.appendRow(row); existInc[inc.id]=incSh.getLastRow(); }
     written.incomes++;

@@ -5,7 +5,7 @@ function renderAssets(){
   const byBank={};
   const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
   DB.assets.forEach(a=>{
-    const bname = allBanks[a.bank] || '?';
+    const bname = a.bankName || allBanks[a.bank] || '?';
     if(!byBank[bname]) byBank[bname]={latest:0,date:''};
     if(!byBank[bname].date||a.date>=byBank[bname].date){byBank[bname].latest=a.amount;byBank[bname].date=a.date;}
   });
@@ -40,7 +40,11 @@ function renderAssets(){
   // Chart
   const assetsSorted=[...DB.assets].sort((a,b)=>a.date.localeCompare(b.date));
   const byDate={};
-  assetsSorted.forEach(a=>{if(!byDate[a.date])byDate[a.date]={};byDate[a.date][a.bank]=a.amount;});
+  assetsSorted.forEach(a=>{
+    const key = a.bankName || allBanks[a.bank] || String(a.bank);
+    if(!byDate[a.date])byDate[a.date]={};
+    byDate[a.date][key]=a.amount;
+  });
   const allDates=Object.keys(byDate).sort();
   const labels=[],data=[];
   const running={};
@@ -74,7 +78,10 @@ function openAssetModal(){
 function saveAsset(){
   const amt = parseFloat(document.getElementById('asset-amount').value);
   if(!amt||amt<=0){toast('Введите сумму');return;}
-  DB.assets.push({id:uid(),bank:parseInt(document.getElementById('asset-bank').value),amount:amt,date:document.getElementById('asset-date').value});
+  const bankIdx = parseInt(document.getElementById('asset-bank').value);
+  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const bankName = allBanks[bankIdx] || '';
+  DB.assets.push({id:uid(), bank:bankIdx, bankName, amount:amt, date:document.getElementById('asset-date').value});
   saveDB();
   closeModal('modal-asset');
   renderAssets();

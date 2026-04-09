@@ -27,8 +27,9 @@ function changeMonth(d){
 
 // ─── DAY NAV ────────────────────────────────────────────────────────
 function changeDay(d){
-  const dt = new Date(currentDay);
+  // Parse as local date (add T12:00:00 to avoid UTC midnight shift)
+  const dt = new Date(currentDay + 'T12:00:00');
   dt.setDate(dt.getDate()+d);
-  currentDay = dt.toISOString().split('T')[0];
+  currentDay = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
   renderDay();
 }
