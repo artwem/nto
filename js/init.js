@@ -51,7 +51,16 @@ function normDate(d) {
 function buildPayload(){
   // Normalize all dates before sending to Apps Script
   const expenses = (DB.expenses||[]).map(e => ({...e, date: normDate(e.date)}));
-  const assets   = (DB.assets||[]).map(a => ({...a, date: normDate(a.date)}));
+  // Recompute bank index from bankName before sending — prevents index drift
+  const allBanksNow = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const assets = (DB.assets||[]).map(a => {
+    const normalized = {...a, date: normDate(a.date)};
+    if (a.bankName) {
+      const idx = allBanksNow.indexOf(a.bankName);
+      if (idx >= 0) normalized.bank = idx;
+    }
+    return normalized;
+  });
   const incomes  = (DB.incomes||[]).map(i => ({...i, date: normDate(i.date)}));
   return {
     expenses, assets, incomes,
@@ -108,7 +117,16 @@ function mergePullData(d){
   // Merge assets — sheet wins, preserve app-only entries
   if(d.assets && d.assets.length){
     const appOnly = DB.assets.filter(a => !String(a.id||'').startsWith('gs_'));
-    const sheetAssets = (d.assets||[]).map(a => ({...a, date: normDate(a.date)})).filter(a => a.date);
+    const allBanksForMerge = [...(d.banks||[]), ...(d.creditBanks||[])];
+    const sheetAssets = (d.assets||[]).map(a => {
+      const normalized = {...a, date: normDate(a.date)};
+      // Recompute bank index from bankName using pulled banks list
+      if (a.bankName && allBanksForMerge.length) {
+        const idx = allBanksForMerge.indexOf(a.bankName);
+        if (idx >= 0) normalized.bank = idx;
+      }
+      return normalized;
+    }).filter(a => a.date);
     DB.assets = [...appOnly, ...sheetAssets];
   }
 

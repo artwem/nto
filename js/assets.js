@@ -1,10 +1,14 @@
 // ─── RENDER: ASSETS ─────────────────────────────────────────────────
-function isCredit(bankName){ return (DB.creditBanks||[]).includes(bankName); }
+function isCredit(bankName){
+  // Check explicit creditBanks list (source of truth)
+  return (DB.creditBanks||[]).includes(bankName);
+}
 
 function renderAssets(){
   const byBank={};
   const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
   DB.assets.forEach(a=>{
+    // Prefer bankName (string), fall back to index lookup
     const bname = a.bankName || allBanks[a.bank] || '?';
     if(!byBank[bname]) byBank[bname]={latest:0,date:''};
     if(!byBank[bname].date||a.date>=byBank[bname].date){byBank[bname].latest=a.amount;byBank[bname].date=a.date;}
@@ -81,6 +85,8 @@ function saveAsset(){
   const bankIdx = parseInt(document.getElementById('asset-bank').value);
   const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
   const bankName = allBanks[bankIdx] || '';
+  if(!bankName){toast('Банк не найден'); return;}
+  // Store bankName as primary key — bank index can drift after sync
   DB.assets.push({id:uid(), bank:bankIdx, bankName, amount:amt, date:document.getElementById('asset-date').value});
   saveDB();
   closeModal('modal-asset');

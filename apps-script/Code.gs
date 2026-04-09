@@ -6,7 +6,7 @@
 const SHEET_DAYS     = 'По дням';
 const SHEET_TEMPLATE = 'Шаблон';
 const SHEET_COMMENTS = 'Комментарии';
-const SHEET_ASSETS   = 'Активы на 01';
+const SHEET_ASSETS   = 'Активы';
 const SHEET_INCOME   = 'Доходы';
 const SHEET_COLORS   = 'Настройки';
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
@@ -118,7 +118,7 @@ function setupSheets(ss) {
     }
     ds.getRange(row,1).setValue('Итого');
   }
-  ensureSheet(ss, SHEET_ASSETS, ['Дата','Сбер','Альфа','Тинь','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ','КРЕДИТ(СПЛИТ)','Общий актив']);
+  ensureSheet(ss, SHEET_ASSETS, ['Общий актив','Дата']);
   ensureSheet(ss, SHEET_INCOME, ['id','date','source','amount','comment','month']);
   ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);
   ensureSheet(ss, SHEET_COLORS, ['Категория','Цвет']);
@@ -202,32 +202,33 @@ function pullAll() {
     }
   }
 
-  // Активы
+  // Активы — формат: Общий актив | Дата | Банки... | Кредиты...
   const aSh = ss.getSheetByName(SHEET_ASSETS);
   const assets = [], banks = [], creditBanks = [];
   if (aSh) {
     const ad = aSh.getDataRange().getValues();
     const ah = ad[0];
-    const bankCols = [];
-    // c is 0-based; getRange/getValue needs 1-based → store c+1 as col
-    for (let c = 0; c < ah.length; c++) {
+    // Col 0 = Общий актив, Col 1 = Дата, Col 2+ = banks
+    for (let c = 2; c < ah.length; c++) {
       const name = String(ah[c]||'').trim();
-      if (!name || name === 'Дата' || name === 'Общий актив') continue;
-      const isCredit = name.toUpperCase().includes('КРЕДИТ');
-      bankCols.push({name, c: c, col: c + 1, isCredit});
-      if (isCredit) creditBanks.push(name); else banks.push(name);
+      if (!name) continue;
+      const isCred = name.toUpperCase().includes('КРЕДИТ');
+      if (isCred) creditBanks.push(name); else banks.push(name);
     }
-    const allB = [...banks,...creditBanks];
+    const allB = [...banks, ...creditBanks];
     for (let r = 1; r < ad.length; r++) {
-      const ds = cellToDateStr(ad[r][0]);
+      const ds = cellToDateStr(ad[r][1]); // col index 1 = Дата
       if (!ds) continue;
-      for (const {name, c, col} of bankCols) {
-        const v = ad[r][c]; // c is 0-based array index
+      for (let c = 2; c < ah.length; c++) {
+        const name = String(ah[c]||'').trim();
+        if (!name) continue;
+        const v = ad[r][c];
         if (v===null||v===''||v===undefined) continue;
         const num = typeof v==='number' ? v : parseFloat(String(v).replace(/[^\d.]/g,''));
         if (isNaN(num)) continue;
-        assets.push({ id:'gs_a_'+allB.indexOf(name)+'_'+ds.replace(/-/g,''),
-          bank:allB.indexOf(name), bankName:name, amount:Math.abs(num), date:ds });
+        const bankIdx = allB.indexOf(name);
+        assets.push({ id:'gs_a_'+bankIdx+'_'+ds.replace(/-/g,''),
+          bank: bankIdx, bankName: name, amount: Math.abs(num), date: ds });
       }
     }
   }
@@ -444,77 +445,75 @@ function pushAll(data) {
   const regularBanks = data.banks || [];
   const creditBanksList = data.creditBanks || [];
   const allBanks = [...regularBanks, ...creditBanksList];
+
   if (allBanks.length && (data.assets||[]).length) {
     const aSh = ss.getSheetByName(SHEET_ASSETS);
-    const totalColName = 'Общий актив';
+    if (!aSh) return written;
 
-    // Step 1: build header map from current sheet
-    function getHeaderMap() {
-      const header = aSh.getRange(1, 1, 1, aSh.getLastColumn()).getValues()[0];
-      const map = {};
-      header.forEach((name, i) => {
-        const n = String(name||'').trim();
-        if (n) map[n] = i + 1; // 1-based column number
-      });
-      return map;
+    // Helper: read current header as {name: 1basedCol}
+    function getColMap() {
+      const h = aSh.getRange(1, 1, 1, aSh.getLastColumn()).getValues()[0];
+      const m = {};
+      h.forEach((v, i) => { const n = String(v||'').trim(); if (n) m[n] = i + 1; });
+      return m;
     }
 
-    let headerMap = getHeaderMap();
+    let colMap = getColMap();
 
-    // Step 2: ensure "Общий актив" column exists as last column
-    if (!headerMap[totalColName]) {
+    // Layout: col1=Общий актив, col2=Дата, col3..=regular, then credit
+    // Ensure base columns exist
+    if (!colMap['Общий актив']) { aSh.getRange(1,1).setValue('Общий актив'); colMap = getColMap(); }
+    if (!colMap['Дата'])        { aSh.getRange(1,2).setValue('Дата');         colMap = getColMap(); }
+
+    // Add missing regular banks: insert before the first credit column (or before last col if no credits)
+    for (const bank of regularBanks) {
+      if (colMap[bank]) continue;
+      // Find insertion point: before first credit bank column, or before Общий актив if it got shifted
+      const creditCols = creditBanksList.map(b => colMap[b]).filter(Boolean);
+      const firstCreditCol = creditCols.length ? Math.min(...creditCols) : aSh.getLastColumn() + 1;
+      // insertColumnBefore shifts everything right, then clear the new column and set header
+      aSh.insertColumnBefore(firstCreditCol);
+      aSh.getRange(1, firstCreditCol, aSh.getLastRow(), 1).clearContent();
+      aSh.getRange(1, firstCreditCol).setValue(bank);
+      colMap = getColMap();
+    }
+
+    // Add missing credit banks: append after last column
+    for (const bank of creditBanksList) {
+      if (colMap[bank]) continue;
       const newCol = aSh.getLastColumn() + 1;
-      aSh.getRange(1, newCol).setValue(totalColName);
-      headerMap = getHeaderMap();
+      aSh.getRange(1, newCol).setValue(bank);
+      colMap = getColMap();
     }
 
-    // Step 3: add new banks BEFORE "Общий актив" by appending a new column
-    // then move "Общий актив" header to the right
-    for (const bank of allBanks) {
-      if (!headerMap[bank]) {
-        const totalColNum = headerMap[totalColName];
-        // Append a new empty column at the end
-        const newCol = aSh.getLastColumn() + 1;
-        aSh.getRange(1, newCol).setValue(totalColName); // move total header to end
-        aSh.getRange(1, totalColNum).setValue(bank);    // bank takes old total position
-        headerMap = getHeaderMap();
-      }
-    }
+    // Final column map
+    colMap = getColMap();
+    const totalCol = colMap['Общий актив'] || 1;
+    const dateCol  = colMap['Дата'] || 2;
 
-    // Step 4: final header map
-    headerMap = getHeaderMap();
-    const totalCol = headerMap[totalColName];
-
-    // Build colByBank (exclude Дата and Общий актив)
-    const colByBank = {};
-    Object.entries(headerMap).forEach(([name, col]) => {
-      if (name !== 'Дата' && name !== totalColName) colByBank[name] = col;
-    });
-
-    // Step 5: build date→row map
+    // Build date → row map
     const lastRow = aSh.getLastRow();
     const dateRowMap = {};
     if (lastRow > 1) {
-      const dateCol = aSh.getRange(2, 1, lastRow - 1, 1).getValues();
-      dateCol.forEach((row, i) => {
-        const ds = cellToDateStr(row[0]);
-        if (ds) dateRowMap[ds] = i + 2; // 1-based row
+      aSh.getRange(2, dateCol, lastRow - 1, 1).getValues().forEach((r, i) => {
+        const ds = cellToDateStr(r[0]);
+        if (ds) dateRowMap[ds] = i + 2;
       });
     }
 
-    // Step 6: write bank values
+    // Write bank values
     for (const a of (data.assets||[])) {
-      if (!a.date || typeof a.date !== 'string' || !a.date.match(/^\d{4}-\d{2}-\d{2}$/)) continue;
-      const bname = allBanks[a.bank] || a.bankName;
+      if (!a.date || !String(a.date).match(/^\d{4}-\d{2}-\d{2}$/)) continue;
+      // Always prefer bankName (reliable) over bank index (can drift after sync)
+      const bname = a.bankName || allBanks[a.bank];
       if (!bname) continue;
-      const col = colByBank[bname];
+      const col = colMap[bname];
       if (!col) continue;
       let row = dateRowMap[a.date];
       if (!row) {
-        // New date row — append
         const newRow = aSh.getLastRow() + 1;
-        aSh.getRange(newRow, 1).setValue(a.date);
-        aSh.getRange(newRow, 1).setNumberFormat('@');
+        aSh.getRange(newRow, dateCol).setValue(a.date);
+        aSh.getRange(newRow, dateCol).setNumberFormat('@');
         row = newRow;
         dateRowMap[a.date] = row;
       }
@@ -522,22 +521,17 @@ function pushAll(data) {
       written.assets++;
     }
 
-    // Step 7: recalculate "Общий актив" for every data row
+    // Recalculate Общий актив for all data rows
+    colMap = getColMap();
     const finalLastRow = aSh.getLastRow();
-    if (finalLastRow > 1 && totalCol) {
+    if (finalLastRow > 1) {
       const allData = aSh.getRange(2, 1, finalLastRow - 1, aSh.getLastColumn()).getValues();
       allData.forEach((rowData, i) => {
-        if (!cellToDateStr(rowData[0])) return; // skip empty rows
+        if (!cellToDateStr(rowData[colMap['Дата'] - 1])) return;
         let total = 0;
-        regularBanks.forEach(b => {
-          const col = colByBank[b];
-          if (col) total += parseFloat(rowData[col - 1]) || 0;
-        });
-        creditBanksList.forEach(b => {
-          const col = colByBank[b];
-          if (col) total -= parseFloat(rowData[col - 1]) || 0;
-        });
-        aSh.getRange(i + 2, totalCol).setValue(total || '');
+        regularBanks.forEach(b => { const c = colMap[b]; if (c) total += parseFloat(rowData[c-1]) || 0; });
+        creditBanksList.forEach(b => { const c = colMap[b]; if (c) total -= parseFloat(rowData[c-1]) || 0; });
+        aSh.getRange(i + 2, colMap['Общий актив']).setValue(total || '');
       });
     }
   }
