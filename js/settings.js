@@ -148,13 +148,20 @@ function confirmClearData(){
 }
 
 function doClearData(){
-  DB.expenses = [];
-  DB.assets = [];
-  DB.incomes = [];
-  DB.limits = {};
+  // Clear all transaction data
+  DB.expenses   = [];
+  DB.assets     = [];
+  DB.incomes    = [];
+  DB.limits     = {};
   DB.catRenames = [];
+  DB.bankRenames= [];
+  // Clear categories and banks completely
+  DB.categories  = [];
+  DB.catColors   = {};
+  DB.banks       = [];
+  DB.creditBanks = [];
   saveDB();
   closeModal('modal-confirm-clear');
   renderBudget();
-  toast('Данные удалены');
+  toast('Все данные очищены');
 }

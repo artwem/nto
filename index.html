@@ -481,11 +481,19 @@
 <!-- MODAL: CONFIRM CLEAR -->
 <div class="overlay" id="modal-confirm-clear">
   <div class="sheet" style="position:relative">
-    <h2 style="color:var(--red)">Удалить все данные?</h2>
-    <p style="font-size:14px;color:var(--muted);margin:8px 0 20px;line-height:1.5">Все расходы, доходы и активы будут удалены. Это действие нельзя отменить.</p>
+    <h2 style="color:var(--red)">Очистить все данные?</h2>
+    <p style="font-size:14px;color:var(--muted);margin:8px 0 4px;line-height:1.6">Будут удалены и сброшены к значениям по умолчанию:</p>
+    <ul style="font-size:13px;color:var(--muted);margin:0 0 16px 16px;line-height:1.8">
+      <li>Все расходы, доходы, записи активов</li>
+      <li>Все лимиты по месяцам</li>
+      <li>Все категории</li>
+      <li>Все банки и счета</li>
+      <li>Цвета категорий</li>
+    </ul>
+    <p style="font-size:12px;color:var(--red);margin-bottom:16px">⚠ Данные в Google Sheets не затрагиваются. Действие нельзя отменить.</p>
     <div class="btn-row">
       <button class="btn" onclick="closeModal('modal-confirm-clear')">Отмена</button>
-      <button class="btn danger" onclick="doClearData()">Удалить всё</button>
+      <button class="btn danger" onclick="doClearData()">Очистить всё</button>
     </div>
   </div>
 </div>
@@ -1450,15 +1458,22 @@ function confirmClearData(){
 }
 
 function doClearData(){
-  DB.expenses = [];
-  DB.assets = [];
-  DB.incomes = [];
-  DB.limits = {};
+  // Clear all transaction data
+  DB.expenses   = [];
+  DB.assets     = [];
+  DB.incomes    = [];
+  DB.limits     = {};
   DB.catRenames = [];
+  DB.bankRenames= [];
+  // Clear categories and banks completely
+  DB.categories  = [];
+  DB.catColors   = {};
+  DB.banks       = [];
+  DB.creditBanks = [];
   saveDB();
   closeModal('modal-confirm-clear');
   renderBudget();
-  toast('Данные удалены');
+  toast('Все данные очищены');
 }
 
 
