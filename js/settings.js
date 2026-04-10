@@ -107,6 +107,23 @@ function startEditCat(i){
   const oldName = DB.categories[i];
   const color = getCatColor(i);
 
+  // Build group options: unique colors with member names
+  const colorMap = {};
+  DB.categories.forEach((c,j) => {
+    const col = getCatColor(j);
+    if(!colorMap[col]) colorMap[col] = [];
+    colorMap[col].push({name:c, idx:j});
+  });
+  const groups = Object.entries(colorMap).filter(([,members]) => members.length > 1);
+
+  // Row 1: color + name
+  const colorInp = document.createElement('input');
+  colorInp.type = 'color';
+  colorInp.value = color;
+  colorInp.style.cssText = 'width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none';
+  colorInp.id = 'cat-color-inp-'+i;
+  colorInp.addEventListener('change', function(){ setCatColor(i, this.value); });
+
   const nameInp = document.createElement('input');
   nameInp.type = 'text';
   nameInp.id = 'cat-edit-'+i;
@@ -116,12 +133,6 @@ function startEditCat(i){
     if(e.key==='Enter') saveCatName(i);
     if(e.key==='Escape') renderCatManager();
   });
-
-  const colorInp = document.createElement('input');
-  colorInp.type = 'color';
-  colorInp.value = color;
-  colorInp.style.cssText = 'width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none';
-  colorInp.addEventListener('change', function(){ setCatColor(i, this.value); });
 
   const btnOk = document.createElement('button');
   btnOk.className = 'btn primary small';
@@ -134,7 +145,51 @@ function startEditCat(i){
   btnCancel.onclick = renderCatManager;
 
   row.innerHTML = '';
+  row.style.flexWrap = 'wrap';
   row.append(colorInp, nameInp, btnOk, btnCancel);
+
+  // Row 2: group selector (only if groups exist)
+  if(groups.length){
+    const grpRow = document.createElement('div');
+    grpRow.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:6px 0 2px 34px';
+
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:12px;color:var(--muted);white-space:nowrap';
+    lbl.textContent = 'Группа:';
+
+    const sel = document.createElement('select');
+    sel.id = 'cat-group-sel-'+i;
+    sel.style.cssText = 'flex:1;padding:5px 8px;font-size:13px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text)';
+
+    // Option: no group
+    const optNone = document.createElement('option');
+    optNone.value = '';
+    optNone.textContent = '— без группы —';
+    sel.appendChild(optNone);
+
+    // One option per existing group
+    groups.forEach(([grpColor, members]) => {
+      const opt = document.createElement('option');
+      opt.value = grpColor;
+      opt.textContent = members.filter(m => m.idx !== i).map(m => m.name).join(', ');
+      if(grpColor === color && members.length > 1) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    sel.addEventListener('change', function(){
+      if(this.value){
+        // Join group — apply group color to this category
+        setCatColor(i, this.value);
+        // Update color picker to reflect
+        const cp = document.getElementById('cat-color-inp-'+i);
+        if(cp) cp.value = this.value;
+      }
+    });
+
+    grpRow.append(lbl, sel);
+    row.appendChild(grpRow);
+  }
+
   setTimeout(function(){ nameInp.focus(); nameInp.select(); }, 50);
 }
 

@@ -40,19 +40,24 @@ function renderBudget(){
       const hdr = document.createElement('div');
       hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;background:'+color+'18';
 
-      // Build header left side with clickable color dot
+      // Color picker — must be direct child of body for iOS to work
       const grpColorInput = document.createElement('input');
       grpColorInput.type = 'color';
       grpColorInput.value = color;
-      grpColorInput.style.cssText = 'position:absolute;opacity:0;width:0;height:0;pointer-events:none';
-      const _color = color; // capture for closure
-      grpColorInput.addEventListener('change', function(){ setGroupColor(_color, this.value); });
+      grpColorInput.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;width:1px;height:1px';
+      const _color = color;
+      grpColorInput.addEventListener('change', function(){
+        setGroupColor(_color, this.value);
+        document.body.removeChild(grpColorInput);
+      });
 
       const grpDot = document.createElement('div');
       grpDot.style.cssText = 'width:12px;height:12px;border-radius:50%;background:'+color+';flex-shrink:0;cursor:pointer';
       grpDot.title = 'Изменить цвет группы';
-      grpDot.appendChild(grpColorInput);
-      grpDot.addEventListener('click', function(){ grpColorInput.click(); });
+      grpDot.addEventListener('click', function(){
+        document.body.appendChild(grpColorInput);
+        grpColorInput.click();
+      });
 
       const grpLeft = document.createElement('div');
       grpLeft.style.cssText = 'display:flex;align-items:center;gap:6px';
