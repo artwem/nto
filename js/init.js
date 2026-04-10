@@ -29,6 +29,7 @@ async function autoSyncOnStart(){
     renderBudget();
     const ts = new Date().toISOString();
     localStorage.setItem('lastSync', ts);
+    sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
   } catch(e){ setSyncStatus('error'); }
   _syncInProgress = false;

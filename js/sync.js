@@ -120,6 +120,8 @@ async function pushToSheets(){
     const w = d.written || {};
     DB.catRenames = [];
     DB.bankRenames = [];
+    // Clean up _deleted expenses — already zeroed in sheet
+    DB.expenses = DB.expenses.filter(e => !e._deleted);
     localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
     toast('✓ Выгружено в таблицу!');
   } catch(e) {
@@ -208,9 +210,13 @@ function startAutoSync(){
       const d = await syncRequest('push', data);
       if(d && !d.error){
         DB._dirty = false;
+        DB.catRenames = [];
+        DB.bankRenames = [];
+        DB.expenses = DB.expenses.filter(e => !e._deleted);
         const ts = new Date().toISOString();
         localStorage.setItem('lastSync', ts);
         sessionStorage.setItem('lastSync', ts);
+        localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
         setSyncStatus('ok', ts);
       }
     } catch(e) {}
