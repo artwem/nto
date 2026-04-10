@@ -10,8 +10,8 @@ let DB = {
   expenses: [],
   incomes: [],
   assets: [],
-  banks: ['Сбер','Альфа','Тиньк','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ'],
-  creditBanks: ['КРЕДИТ(СПЛИТ)'],
+  banks: [],
+  creditBanks: [],
   limits: {},  // key: "YYYY-MM", value: array of limits per category
   syncUrl: ''
 };
@@ -53,6 +53,9 @@ function loadDB(){
   if(!DB.banks) DB.banks = [];
   if(!DB.creditBanks) DB.creditBanks = [];
   if(!DB.catColors) DB.catColors = {};
+  if(!DB.catGroups) DB.catGroups = {};
+  if(!DB.catGroups) DB.catGroups = {};
+  if(!DB.catGroupMap) DB.catGroupMap = {};
   if(!DB.incomes) DB.incomes = [];
   if(!DB.catRenames) DB.catRenames = [];
   if(!DB.bankRenames) DB.bankRenames = [];
@@ -121,6 +124,18 @@ function getLimits(y,m){
 function getCatColor(i){
   if(DB.catColors && DB.catColors[i]) return DB.catColors[i];
   return CAT_COLORS[i % CAT_COLORS.length];
+}
+
+// Group = all categories sharing the same color
+function getCatGroup(i){
+  const color = getCatColor(i);
+  const peers = DB.categories.filter((_,j) => j !== i && getCatColor(j) === color);
+  return peers.length > 0 ? color : null; // group identified by color
+}
+
+// All indices sharing this color
+function getGroupIndices(color){
+  return DB.categories.map((_,i) => i).filter(i => getCatColor(i) === color);
 }
 
 function getMonthExpenses(y,m){

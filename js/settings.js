@@ -3,8 +3,9 @@ function renderSettings(){
   const hasSyncUrl = !!DB.syncUrl;
   document.getElementById('sync-url-display').textContent =
     hasSyncUrl ? DB.syncUrl.slice(0,40)+'…' : 'Не задан';
-  ['sync-test-row','sync-pull-row','sync-push-row','sync-last-row'].forEach(id=>{
-    document.getElementById(id).style.display = hasSyncUrl ? 'flex' : 'none';
+  ['sync-test-row','sync-pull-row','sync-push-row','sync-last-row','sync-interval-row'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.style.display = hasSyncUrl ? 'flex' : 'none';
   });
   const lastSync = localStorage.getItem('lastSync') || sessionStorage.getItem('lastSync');
   if(lastSync){
@@ -34,19 +35,70 @@ function openCatManager(){
 }
 
 function renderCatManager(){
+  // Build color → [indices] map to show group badges
+  const colorCount = {};
+  DB.categories.forEach((_,i) => {
+    const c = getCatColor(i);
+    colorCount[c] = (colorCount[c]||0) + 1;
+  });
+
   document.getElementById('cat-manager-list').innerHTML = DB.categories.map((c,i) => {
+    const color = getCatColor(i);
+    const inGroup = colorCount[color] > 1;
     const delBtn = DB.categories.length > 1
       ? '<button class="btn danger small" onclick="removeCategory('+i+')">✕</button>'
       : '';
+    const groupDot = inGroup
+      ? '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+color+';margin-left:5px;vertical-align:middle" title="В группе"></span>'
+      : '';
     return '<div class="setting-row" style="cursor:default;gap:6px;flex-wrap:nowrap" id="cat-row-'+i+'">'
-      + '<input type="color" value="'+getCatColor(i)+'"'
+      + '<input type="color" value="'+color+'"'
       + ' style="width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none"'
-      + ' onchange="setCatColor('+i+',this.value)" title="Цвет категории"/>'
-      + '<span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditCat('+i+')">'+c+'</span>'
+      + ' onchange="setCatColor('+i+',this.value)" title="Цвет. Одинаковый цвет = одна группа"/>'
+      + '<span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditCat('+i+')">'+c+groupDot+'</span>'
       + '<button class="btn small" style="padding:5px 8px;flex-shrink:0" onclick="startEditCat('+i+')" title="Переименовать">✎</button>'
       + delBtn
       + '</div>';
   }).join('');
+
+  // Show group summary below list
+  const groups = buildGroupSummary();
+  const grpEl = document.getElementById('cat-group-summary');
+  if(grpEl){
+    if(groups.length){
+      grpEl.style.display = 'block';
+      grpEl.innerHTML = '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:12px 0 6px">Группы</div>'
+        + groups.map(g =>
+            '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:0.5px solid var(--border)">'
+            + '<input type="color" value="'+g.color+'" onchange="setGroupColor(\''+g.color+'\',this.value)"'
+            + ' style="width:22px;height:22px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none"/>'
+            + '<span style="font-size:13px;color:var(--text);flex:1">'+g.names.join(', ')+'</span>'
+            + '</div>'
+          ).join('');
+    } else {
+      grpEl.style.display = 'none';
+    }
+  }
+}
+
+function buildGroupSummary(){
+  const colorMap = {};
+  DB.categories.forEach((c,i) => {
+    const col = getCatColor(i);
+    if(!colorMap[col]) colorMap[col] = {color:col, names:[]};
+    colorMap[col].names.push(c);
+  });
+  return Object.values(colorMap).filter(g => g.names.length > 1);
+}
+
+// Change color of entire group
+function setGroupColor(oldColor, newColor){
+  if(!DB.catColors) DB.catColors = {};
+  DB.categories.forEach((_,i) => {
+    if(getCatColor(i) === oldColor) DB.catColors[i] = newColor;
+  });
+  saveDB();
+  renderCatManager();
 }
 
 function startEditCat(i){
@@ -54,19 +106,36 @@ function startEditCat(i){
   if(!row) return;
   const oldName = DB.categories[i];
   const color = getCatColor(i);
-  row.innerHTML =
-    '<input type="color" value="'+color+'"'
-    + ' style="width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none"'
-    + ' onchange="setCatColor('+i+',this.value)"/>'
-    + '<input type="text" id="cat-edit-'+i+'" value="'+oldName+'"'
-    + ' style="flex:1;padding:6px 8px;font-size:14px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text);font-family:inherit"'
-    + ' onkeydown="if(event.key===\'Enter\')saveCatName('+i+');if(event.key===\'Escape\')renderCatManager()"/>'
-    + '<button class="btn primary small" onclick="saveCatName('+i+')">✓</button>'
-    + '<button class="btn small" onclick="renderCatManager()">✕</button>';
-  setTimeout(function(){
-    var inp = document.getElementById('cat-edit-'+i);
-    if(inp){ inp.focus(); inp.select(); }
-  }, 50);
+
+  const nameInp = document.createElement('input');
+  nameInp.type = 'text';
+  nameInp.id = 'cat-edit-'+i;
+  nameInp.value = oldName;
+  nameInp.style.cssText = 'flex:1;padding:6px 8px;font-size:14px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text);font-family:inherit;min-width:0';
+  nameInp.addEventListener('keydown', function(e){
+    if(e.key==='Enter') saveCatName(i);
+    if(e.key==='Escape') renderCatManager();
+  });
+
+  const colorInp = document.createElement('input');
+  colorInp.type = 'color';
+  colorInp.value = color;
+  colorInp.style.cssText = 'width:26px;height:26px;border:none;padding:0;border-radius:50%;cursor:pointer;flex-shrink:0;background:none';
+  colorInp.addEventListener('change', function(){ setCatColor(i, this.value); });
+
+  const btnOk = document.createElement('button');
+  btnOk.className = 'btn primary small';
+  btnOk.textContent = '✓';
+  btnOk.onclick = function(){ saveCatName(i); };
+
+  const btnCancel = document.createElement('button');
+  btnCancel.className = 'btn small';
+  btnCancel.textContent = '✕';
+  btnCancel.onclick = renderCatManager;
+
+  row.innerHTML = '';
+  row.append(colorInp, nameInp, btnOk, btnCancel);
+  setTimeout(function(){ nameInp.focus(); nameInp.select(); }, 50);
 }
 
 function saveCatName(i){
@@ -74,15 +143,16 @@ function saveCatName(i){
   if(!inp) return;
   const newName = inp.value.trim();
   if(!newName){ toast('Название не может быть пустым'); return; }
-  if(newName === DB.categories[i]){ renderCatManager(); return; }
-  if(DB.categories.includes(newName)){ toast('Такая категория уже есть'); return; }
-  const oldName = DB.categories[i];
-  DB.categories[i] = newName;
-  if(!DB.catRenames) DB.catRenames = [];
-  DB.catRenames.push({from: oldName, to: newName, ts: Date.now()});
+  if(newName !== DB.categories[i]){
+    if(DB.categories.includes(newName)){ toast('Такая категория уже есть'); return; }
+    const oldName = DB.categories[i];
+    DB.categories[i] = newName;
+    if(!DB.catRenames) DB.catRenames = [];
+    DB.catRenames.push({from: oldName, to: newName, ts: Date.now()});
+  }
   saveDB();
   renderCatManager();
-  toast('Переименовано: ' + oldName + ' → ' + newName);
+  toast('Сохранено');
 }
 
 function addCategory(){
@@ -103,13 +173,13 @@ function setCatColor(i, color){
   if(!DB.catColors) DB.catColors = {};
   DB.catColors[i] = color;
   saveDB();
+  renderCatManager();
 }
 
 function removeCategory(i){
   if(DB.categories.length <= 1) return;
   const name = DB.categories[i];
   DB.categories.splice(i, 1);
-  // Shift catColors keys
   const newColors = {};
   Object.entries(DB.catColors||{}).forEach(([k,v]) => {
     const ki = parseInt(k);
@@ -150,14 +220,12 @@ function confirmClearData(){
 }
 
 function doClearData(){
-  // Clear all transaction data
   DB.expenses   = [];
   DB.assets     = [];
   DB.incomes    = [];
   DB.limits     = {};
   DB.catRenames = [];
   DB.bankRenames= [];
-  // Clear categories and banks completely
   DB.categories  = [];
   DB.catColors   = {};
   DB.banks       = [];

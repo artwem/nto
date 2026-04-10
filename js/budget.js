@@ -11,29 +11,22 @@ function renderBudget(){
   const spentArr = DB.categories.map((_,i) => getCatSpent(i,y,m));
   DB.categories.forEach((_,i) => { totalSpent += spentArr[i]; totalLimit += limits[i]||0; });
 
-  // Group categories by color
-  // Single-color groups (unique color) render standalone
-  // Multi-color groups render with a colored bracket and group summary
-  const colorMap = {}; // color → [indices]
+  // Group by color — same color = same group
+  const colorGroups = {}; // color → [indices]
   DB.categories.forEach((_,i) => {
     const c = getCatColor(i);
-    if(!colorMap[c]) colorMap[c] = [];
-    colorMap[c].push(i);
+    if(!colorGroups[c]) colorGroups[c] = [];
+    colorGroups[c].push(i);
   });
 
-  // Build render order: keep original order of categories, but mark group membership
   const rendered = new Set();
 
-  DB.categories.forEach((cat, i) => {
+  DB.categories.forEach((_,i) => {
     if(rendered.has(i)) return;
     const color = getCatColor(i);
-    const group = colorMap[color];
-    const isGroup = group.length > 1;
+    const groupIndices = colorGroups[color];
 
-    if(isGroup){
-      // Render all categories of this color group together
-      const groupIndices = group.filter(idx => !rendered.has(idx));
-      if(!groupIndices.length) return;
+    if(groupIndices.length > 1){
       groupIndices.forEach(idx => rendered.add(idx));
 
       const groupSpent = groupIndices.reduce((s,idx) => s + spentArr[idx], 0);
@@ -41,38 +34,53 @@ function renderBudget(){
       const groupPct   = groupLimit > 0 ? (groupSpent/groupLimit)*100 : 0;
       const groupOver  = groupSpent > groupLimit && groupLimit > 0;
 
-      // Group wrapper
       const wrapper = document.createElement('div');
       wrapper.style.cssText = 'border-radius:var(--r);border:1.5px solid '+color+';overflow:hidden;margin-bottom:2px';
 
-      // Group header
-      const header = document.createElement('div');
-      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;background:'+color+'18';
-      header.innerHTML = `
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:12px;font-weight:600;color:${groupOver?'var(--red)':'var(--text)'}">${fmt(groupSpent)}</span>
-          <span style="font-size:11px;color:var(--muted)">/ ${fmt(groupLimit)}</span>
-          <span style="font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600;background:${groupOver?'var(--red-light)':color+'22'};color:${groupOver?'var(--red)':color}">${groupPct.toFixed(0)}%</span>
-        </div>
-      `;
-      wrapper.appendChild(header);
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px 6px;background:'+color+'18';
 
-      // Individual rows inside group
-      groupIndices.forEach(idx => {
-        wrapper.appendChild(makeCatRow(idx, spentArr[idx], limits[idx]||0, totalLimit, true));
-      });
+      // Build header left side with clickable color dot
+      const grpColorInput = document.createElement('input');
+      grpColorInput.type = 'color';
+      grpColorInput.value = color;
+      grpColorInput.style.cssText = 'position:absolute;opacity:0;width:0;height:0;pointer-events:none';
+      const _color = color; // capture for closure
+      grpColorInput.addEventListener('change', function(){ setGroupColor(_color, this.value); });
 
+      const grpDot = document.createElement('div');
+      grpDot.style.cssText = 'width:12px;height:12px;border-radius:50%;background:'+color+';flex-shrink:0;cursor:pointer';
+      grpDot.title = 'Изменить цвет группы';
+      grpDot.appendChild(grpColorInput);
+      grpDot.addEventListener('click', function(){ grpColorInput.click(); });
+
+      const grpLeft = document.createElement('div');
+      grpLeft.style.cssText = 'display:flex;align-items:center;gap:6px';
+      grpLeft.appendChild(grpDot);
+
+      // Build right side via DOM
+      const grpRight = document.createElement('div');
+      grpRight.style.cssText = 'display:flex;align-items:center;gap:8px';
+      const s1 = document.createElement('span');
+      s1.style.cssText = 'font-size:12px;font-weight:600;color:'+(groupOver?'var(--red)':'var(--text)');
+      s1.textContent = fmt(groupSpent);
+      const s2 = document.createElement('span');
+      s2.style.cssText = 'font-size:11px;color:var(--muted)';
+      s2.textContent = '/ '+fmt(groupLimit);
+      const s3 = document.createElement('span');
+      s3.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600;background:'+(groupOver?'var(--red-light)':color+'22')+';color:'+(groupOver?'var(--red)':color);
+      s3.textContent = groupPct.toFixed(0)+'%';
+      grpRight.append(s1, s2, s3);
+      hdr.appendChild(grpLeft);
+      hdr.appendChild(grpRight);
+      wrapper.appendChild(hdr);
+      groupIndices.forEach(idx => wrapper.appendChild(makeCatRow(idx, spentArr[idx], limits[idx]||0, totalLimit, true)));
       list.appendChild(wrapper);
     } else {
-      // Standalone category
       rendered.add(i);
       list.appendChild(makeCatRow(i, spentArr[i], limits[i]||0, totalLimit, false));
     }
   });
-
   const left = totalLimit - totalSpent;
   document.getElementById('sum-spent').textContent = fmt(totalSpent);
   document.getElementById('sum-limit').textContent = fmt(totalLimit);
@@ -122,6 +130,21 @@ function makeCatRow(i, spent, lim, totalLimit, inGroup){
 }
 
 // ─── EXPENSE CRUD ───────────────────────────────────────────────────
+function updateExpCatHint(){
+  const cat = parseInt(document.getElementById('exp-cat').value);
+  const date = document.getElementById('exp-date').value || currentDay || today();
+  const hint = document.getElementById('exp-cat-hint');
+  const spentEl = document.getElementById('exp-cat-spent');
+  if(isNaN(cat) || !hint) return;
+  const existing = DB.expenses.find(e => e.cat===cat && e.date===date && !e._deleted);
+  if(existing && existing.amount > 0){
+    hint.style.display = 'block';
+    spentEl.textContent = fmt(existing.amount);
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
 function openAddExpense(){
   editingExpenseId = null;
   document.getElementById('expense-modal-title').textContent='Добавить расход';
@@ -131,6 +154,7 @@ function openAddExpense(){
   document.getElementById('exp-amount').value='';
   document.getElementById('exp-comment').value='';
   openModal('modal-expense');
+  setTimeout(updateExpCatHint, 50);
 }
 
 function editExpense(id, e){
@@ -146,6 +170,7 @@ function editExpense(id, e){
   document.getElementById('exp-date').value = exp.date;
   document.getElementById('exp-comment').value = exp.comment||'';
   openModal('modal-expense');
+  setTimeout(updateExpCatHint, 50);
 }
 
 function saveExpense(){
@@ -159,10 +184,11 @@ function saveExpense(){
     const idx = DB.expenses.findIndex(e=>e.id===editingExpenseId);
     if(idx>=0) DB.expenses[idx] = {...DB.expenses[idx], cat, amount:amt, date, comment};
   } else {
-    const existing = DB.expenses.find(e => e.cat===cat && e.date===date);
+    const existing = DB.expenses.find(e => e.cat===cat && e.date===date && !e._deleted);
     if(existing){
-      existing.amount = amt;
-      if(comment) existing.comment = comment;
+      // Add to existing — user enters additional spend, not total
+      existing.amount = Math.round((existing.amount + amt) * 100) / 100;
+      if(comment) existing.comment = (existing.comment ? existing.comment + '; ' : '') + comment;
     } else {
       DB.expenses.push({ id:'gs_'+cat+'_'+date.replace(/-/g,''), cat, amount:amt, date, comment });
     }
