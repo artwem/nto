@@ -179,14 +179,30 @@ function initSyncWidget(){
   setSyncStatus(lastSync ? 'ok' : 'none', lastSync);
 }
 
-// ── Автосинхронизация каждые 5 минут ─────────────────────────────────
+// ── Автосинхронизация ────────────────────────────────────────────────
 let _autoSyncTimer = null;
+
+function getSyncInterval(){
+  const v = parseInt(localStorage.getItem('syncInterval') || '5');
+  return Math.max(1, Math.min(60, isNaN(v) ? 5 : v));
+}
+
+function saveSyncInterval(val){
+  const mins = Math.max(1, Math.min(60, parseInt(val) || 5));
+  document.getElementById('sync-interval-input').value = mins;
+  localStorage.setItem('syncInterval', String(mins));
+  // Restart timer with new interval
+  if(_autoSyncTimer){ clearInterval(_autoSyncTimer); _autoSyncTimer = null; }
+  startAutoSync();
+  toast('Интервал: ' + mins + ' мин');
+}
 
 function startAutoSync(){
   if(!DB.syncUrl || _autoSyncTimer) return;
+  const ms = getSyncInterval() * 60 * 1000;
   _autoSyncTimer = setInterval(async () => {
     if(!DB.syncUrl || document.hidden) return;
-    if(!DB._dirty) return; // nothing changed — skip
+    if(!DB._dirty) return;
     try {
       const data = buildPayload();
       const d = await syncRequest('push', data);
@@ -198,7 +214,7 @@ function startAutoSync(){
         setSyncStatus('ok', ts);
       }
     } catch(e) {}
-  }, 5 * 60 * 1000);
+  }, ms);
 }
 
 

@@ -260,6 +260,15 @@
       <span class="setting-label" style="color:var(--muted)">Последняя синхронизация</span>
       <span class="setting-value" id="sync-last-time">—</span>
     </div>
+    <div class="setting-row" id="sync-interval-row" style="display:none;cursor:default">
+      <span class="setting-label" style="color:var(--muted)">Авто-синхронизация</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="number" id="sync-interval-input" min="1" max="60" value="5"
+          style="width:52px;text-align:center;padding:4px 6px;font-size:13px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text)"
+          onchange="saveSyncInterval(this.value)"/>
+        <span style="font-size:13px;color:var(--muted)">мин</span>
+      </div>
+    </div>
     <div class="setting-row" id="sync-pull-row" onclick="pullFromSheets()" style="display:none">
       <span class="setting-label">⬇ Загрузить из таблицы</span>
       <span class="setting-chevron">›</span>
@@ -1421,6 +1430,8 @@ function renderSettings(){
       d.toLocaleDateString('ru-RU') + ' ' +
       d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
   }
+  const intervalInput = document.getElementById('sync-interval-input');
+  if(intervalInput) intervalInput.value = getSyncInterval();
   const lims = getLimits(currentMonth.y, currentMonth.m);
   document.getElementById('cat-settings-list').innerHTML = DB.categories.map((c,i) => `
     <div class="setting-row">
@@ -1758,14 +1769,30 @@ function initSyncWidget(){
   setSyncStatus(lastSync ? 'ok' : 'none', lastSync);
 }
 
-// ── Автосинхронизация каждые 5 минут ─────────────────────────────────
+// ── Автосинхронизация ────────────────────────────────────────────────
 let _autoSyncTimer = null;
+
+function getSyncInterval(){
+  const v = parseInt(localStorage.getItem('syncInterval') || '5');
+  return Math.max(1, Math.min(60, isNaN(v) ? 5 : v));
+}
+
+function saveSyncInterval(val){
+  const mins = Math.max(1, Math.min(60, parseInt(val) || 5));
+  document.getElementById('sync-interval-input').value = mins;
+  localStorage.setItem('syncInterval', String(mins));
+  // Restart timer with new interval
+  if(_autoSyncTimer){ clearInterval(_autoSyncTimer); _autoSyncTimer = null; }
+  startAutoSync();
+  toast('Интервал: ' + mins + ' мин');
+}
 
 function startAutoSync(){
   if(!DB.syncUrl || _autoSyncTimer) return;
+  const ms = getSyncInterval() * 60 * 1000;
   _autoSyncTimer = setInterval(async () => {
     if(!DB.syncUrl || document.hidden) return;
-    if(!DB._dirty) return; // nothing changed — skip
+    if(!DB._dirty) return;
     try {
       const data = buildPayload();
       const d = await syncRequest('push', data);
@@ -1777,7 +1804,7 @@ function startAutoSync(){
         setSyncStatus('ok', ts);
       }
     } catch(e) {}
-  }, 5 * 60 * 1000);
+  }, ms);
 }
 
 
