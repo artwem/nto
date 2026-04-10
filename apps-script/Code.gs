@@ -295,6 +295,23 @@ function pushAll(data) {
   const categories = data.categories || [];
   const written = { cells:0, comments:0, incomes:0, assets:0 };
 
+  // --- 0. Переименования банков в листе Активы ---
+  const bankRenames = data.bankRenames || [];
+  if (bankRenames.length) {
+    const aSh2 = ss.getSheetByName(SHEET_ASSETS);
+    if (aSh2) {
+      const hRow = aSh2.getRange(1, 1, 1, aSh2.getLastColumn()).getValues()[0];
+      bankRenames.forEach(function(r) {
+        hRow.forEach((name, i) => {
+          if (String(name||'').trim() === r.from) {
+            aSh2.getRange(1, i+1).setValue(r.to);
+          }
+        });
+      });
+    }
+    // Also rename in color sheet if bank names are stored there (future-proof)
+  }
+
   // --- 1. Переименования категорий ---
   const renames = data.catRenames || [];
   const dsSh = ss.getSheetByName(SHEET_DAYS);

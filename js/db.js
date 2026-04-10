@@ -59,6 +59,8 @@ function loadDB(){
   if(!DB.creditBanks) DB.creditBanks = ['КРЕДИТ(СПЛИТ)'];
   if(!DB.catColors) DB.catColors = {};
   if(!DB.incomes) DB.incomes = [];
+  if(!DB.catRenames) DB.catRenames = [];
+  if(!DB.bankRenames) DB.bankRenames = [];
   if(!DB.categories || !DB.categories.length) DB.categories = [...DEFAULT_CATS];
   if(!DB.limits) DB.limits = {};
 }

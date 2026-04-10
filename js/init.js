@@ -67,6 +67,7 @@ function buildPayload(){
     categories: DB.categories,
     catColors: DB.catColors || {},
     catRenames: DB.catRenames || [],
+    bankRenames: DB.bankRenames || [],
     banks: DB.banks,
     creditBanks: DB.creditBanks || [],
     limits: DB.limits

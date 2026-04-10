@@ -101,20 +101,73 @@ function openBankManager(){
 }
 
 function renderBankManager(){
-  const normalRows = (DB.banks||[]).map((b,i)=>`
-    <div class="setting-row" style="cursor:default">
-      <span class="setting-label">${b}</span>
-      <button class="btn danger small" onclick="removeBank('normal',${i})">Удалить</button>
-    </div>`).join('');
-  const creditRows = (DB.creditBanks||[]).map((b,i)=>`
-    <div class="setting-row" style="cursor:default">
-      <span class="setting-label">${b} <span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:1px 5px;border-radius:4px">кредит</span></span>
-      <button class="btn danger small" onclick="removeBank('credit',${i})">Удалить</button>
-    </div>`).join('');
+  function bankRow(b, type, i) {
+    const isCredit = type === 'credit';
+    const badge = isCredit
+      ? '<span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:1px 5px;border-radius:4px;margin-left:6px">кредит</span>'
+      : '';
+    var t = type, ix = i;
+    return '<div class="setting-row" style="cursor:default;gap:6px" id="bank-row-'+t+'-'+ix+'">'
+      + '<span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditBank(&quot;'+t+'&quot;,'+ix+')">'+b+badge+'</span>'
+      + '<button class="btn small" style="padding:5px 8px;flex-shrink:0" onclick="startEditBank(&quot;'+t+'&quot;,'+ix+')" title="Переименовать">✎</button>'
+      + '<button class="btn danger small" onclick="removeBank(&quot;'+t+'&quot;,'+ix+')">✕</button>'
+      + '</div>';
+  }
+  const normalRows = (DB.banks||[]).map((b,i) => bankRow(b,'normal',i)).join('');
+  const creditRows = (DB.creditBanks||[]).map((b,i) => bankRow(b,'credit',i)).join('');
   document.getElementById('bank-manager-list').innerHTML =
     (normalRows||'<div style="padding:8px 0;font-size:13px;color:var(--muted)">Нет счетов</div>') +
     '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding:10px 0 4px">Кредитные (вычитаются)</div>' +
     (creditRows||'<div style="padding:4px 0;font-size:13px;color:var(--muted)">Нет кредитных</div>');
+}
+
+function startEditBank(type, i){
+  const row = document.getElementById('bank-row-'+type+'-'+i);
+  if(!row) return;
+  const arr = type === 'credit' ? (DB.creditBanks||[]) : (DB.banks||[]);
+  const oldName = arr[i];
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.id = 'bank-edit-'+type+'-'+i;
+  inp.value = oldName;
+  inp.style.cssText = 'flex:1;padding:6px 8px;font-size:14px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text);font-family:inherit';
+  inp.addEventListener('keydown', function(e){
+    if(e.key === 'Enter') saveBankName(type, i);
+    if(e.key === 'Escape') renderBankManager();
+  });
+  const btnOk = document.createElement('button');
+  btnOk.className = 'btn primary small';
+  btnOk.textContent = '✓';
+  btnOk.onclick = function(){ saveBankName(type, i); };
+  const btnCancel = document.createElement('button');
+  btnCancel.className = 'btn small';
+  btnCancel.textContent = '✕';
+  btnCancel.onclick = renderBankManager;
+  row.innerHTML = '';
+  row.append(inp, btnOk, btnCancel);
+  setTimeout(function(){ inp.focus(); inp.select(); }, 50);
+}
+
+function saveBankName(type, i){
+  const inp = document.getElementById('bank-edit-'+type+'-'+i);
+  if(!inp) return;
+  const newName = inp.value.trim();
+  if(!newName){ toast('Название не может быть пустым'); return; }
+  const arr = type === 'credit' ? DB.creditBanks : DB.banks;
+  const oldName = arr[i];
+  if(newName === oldName){ renderBankManager(); return; }
+  const allNames = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  if(allNames.includes(newName)){ toast('Такой банк уже есть'); return; }
+  arr[i] = newName;
+  // Update bankName in all assets
+  DB.assets.forEach(a => { if(a.bankName === oldName) a.bankName = newName; });
+  // Store rename for sync
+  if(!DB.bankRenames) DB.bankRenames = [];
+  DB.bankRenames.push({from: oldName, to: newName, ts: Date.now()});
+  saveDB();
+  renderBankManager();
+  renderAssets();
+  toast('Переименовано: ' + oldName + ' → ' + newName);
 }
 
 function toggleCreditCheckbox(){
