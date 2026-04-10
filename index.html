@@ -20,6 +20,7 @@
   })();
 </script>
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 </head>
@@ -33,7 +34,26 @@
 <div id="page-budget" class="page active">
   <div class="hdr">
     <div class="hdr-row">
-      <div style="display:flex;align-items:center;gap:8px"><svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0"><circle cx="14" cy="14" r="13" fill="#0a0a0a"/><ellipse cx="14" cy="14" rx="13" ry="4.5" fill="none" stroke="url(#ag)" stroke-width="2.5" opacity="0.85"/><path d="M14 14 L14 3 A11 11 0 0 1 23.5 8.5 Z" fill="#1a1a1a" stroke="#2a2a2a" stroke-width="0.5"/><path d="M14 14 L23.5 8.5 A11 11 0 0 1 9.5 24.2 Z" fill="#111" stroke="#2a2a2a" stroke-width="0.5"/><path d="M14 14 L9.5 24.2 A11 11 0 0 1 14 3 Z" fill="#0d0d0d" stroke="#2a2a2a" stroke-width="0.5"/><circle cx="14" cy="14" r="5" fill="#000"/><ellipse cx="14" cy="14" rx="9" ry="3" fill="none" stroke="url(#ah)" stroke-width="1" opacity="0.5"/><defs><linearGradient id="ag" x1="1" y1="14" x2="27" y2="14" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#ff6b35" stop-opacity="0.1"/><stop offset="30%" stop-color="#ff9d00" stop-opacity="0.9"/><stop offset="50%" stop-color="#fff4e0" stop-opacity="1"/><stop offset="70%" stop-color="#ff9d00" stop-opacity="0.9"/><stop offset="100%" stop-color="#ff6b35" stop-opacity="0.1"/></linearGradient><linearGradient id="ah" x1="5" y1="14" x2="23" y2="14" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#ff9d00" stop-opacity="0"/><stop offset="50%" stop-color="#ff9d00" stop-opacity="0.6"/><stop offset="100%" stop-color="#ff9d00" stop-opacity="0"/></linearGradient></defs></svg>
+      <div style="display:flex;align-items:center;gap:8px"><svg width="26" height="26" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">
+  <defs>
+    <radialGradient id="vbg" cx="40%" cy="38%" r="65%">
+      <stop offset="0%" stop-color="#1c1c1c"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <clipPath id="vc">
+      <circle cx="100" cy="100" r="95"/>
+    </clipPath>
+  </defs>
+  <circle cx="100" cy="100" r="95" fill="url(#vbg)"/>
+  <path d="M100 100 L100 5 A95 95 0 0 1 182 147.5 Z" fill="#1a1a1a" clip-path="url(#vc)"/>
+  <path d="M100 100 L182 147.5 A95 95 0 0 1 18 147.5 Z" fill="#111" clip-path="url(#vc)"/>
+  <path d="M100 100 L18 147.5 A95 95 0 0 1 100 5 Z" fill="#161616" clip-path="url(#vc)"/>
+  <line x1="100" y1="100" x2="100" y2="5"   stroke="white" stroke-width="2.5" opacity="0.55"/>
+  <line x1="100" y1="100" x2="182" y2="147.5" stroke="white" stroke-width="2.5" opacity="0.55"/>
+  <line x1="100" y1="100" x2="18"  y2="147.5" stroke="white" stroke-width="2.5" opacity="0.55"/>
+  <circle cx="100" cy="100" r="5" fill="white" opacity="0.6"/>
+  <circle cx="100" cy="100" r="95" fill="none" stroke="white" stroke-width="1.5" opacity="0.15"/>
+</svg>
       <h1>V.O.I.D.</h1></div>
 
     </div>
