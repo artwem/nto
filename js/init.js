@@ -11,11 +11,7 @@ function init(){
   // Auto-sync on start if URL configured
   initSyncWidget();
   if(DB.syncUrl){ autoSyncOnStart(); startAutoSync(); }
-  // Auto-push on page close
-  // Автопуш при закрытии отключён — используй кнопку «Выгрузить»
 }
-
-
 
 let _syncInProgress = false;
 
@@ -24,7 +20,7 @@ async function autoSyncOnStart(){
   _syncInProgress = true;
   setSyncStatus('syncing');
   try{
-    const d = await doSyncRequest({action:'pull'});
+    const d = await syncRequest('pull', null);
     if(d.error){ setSyncStatus('error'); _syncInProgress = false; return; }
     mergePullData(d);
     // Save quietly — don't mark dirty (pull data shouldn't trigger push)
@@ -73,8 +69,6 @@ function buildPayload(){
     limits: DB.limits
   };
 }
-
-
 
 function mergePullData(d){
   if(d.categories && d.categories.length) DB.categories = d.categories;
@@ -148,9 +142,5 @@ function mergePullData(d){
     d.creditBanks.forEach(b => { if(!DB.creditBanks.includes(b)) DB.creditBanks.push(b); });
   }
 }
-
-
-
-
 
 loadAppsScriptCode().then(() => init());

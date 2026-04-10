@@ -1,16 +1,11 @@
 // ─── DATA ───────────────────────────────────────────────────────────
-const DEFAULT_CATS = [
-  'ЖКУ + жилье','Транспорт','Связь + интернет','Еда+Хозтовары, уход',
-  'Еда вне дома','Доставка','Одежда','Зубы','Активности','Хотелки',
-  'Развлечения','Подарки','Такси','Дом, быт, другое','Мама','Непредвиденные расходы'
-];
-const DEFAULT_LIMITS = [15000,3000,1500,20000,8000,5000,5000,3000,4000,5000,3000,3000,2000,4000,5000,5000];
+
 const CAT_COLORS = ['#378add','#1d9e75','#d85a30','#ba7517','#d4537e','#639922','#534ab7','#e67e22','#185fa5','#993556','#3b6d11','#a32d2d','#0f6e56','#8e44ad','#993c1d','#7f8c8d'];
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const SHORT_MONTHS = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
 
 let DB = {
-  categories: [...DEFAULT_CATS],
+  categories: [],
   catColors: {},
   expenses: [],
   incomes: [],
@@ -55,13 +50,13 @@ function loadDB(){
   if (DB.syncUrl && !localStorage.getItem('syncUrl')) {
     localStorage.setItem('syncUrl', DB.syncUrl);
   }
-  if(!DB.banks || !DB.banks.length) DB.banks = ['Сбер','Альфа','Тиньк','Цифра+Фридом','Газпром','Яндекс','Озон','Финуслуги','РСХБ'];
-  if(!DB.creditBanks) DB.creditBanks = ['КРЕДИТ(СПЛИТ)'];
+  if(!DB.banks) DB.banks = [];
+  if(!DB.creditBanks) DB.creditBanks = [];
   if(!DB.catColors) DB.catColors = {};
   if(!DB.incomes) DB.incomes = [];
   if(!DB.catRenames) DB.catRenames = [];
   if(!DB.bankRenames) DB.bankRenames = [];
-  if(!DB.categories || !DB.categories.length) DB.categories = [...DEFAULT_CATS];
+  if(!DB.categories) DB.categories = [];
   if(!DB.limits) DB.limits = {};
 }
 
@@ -70,10 +65,7 @@ function saveDB(){
   localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
 }
 
-// Save without marking dirty — used after pull sync to avoid triggering push
-function saveDBQuiet(){
-  localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
-}
+
 
 // ─── SYNC URL PERSISTENCE ────────────────────────────────────────────
 // iOS PWA has separate localStorage from Safari — use cookies as bridge
@@ -123,7 +115,7 @@ function getLimits(y,m){
   const keys = Object.keys(DB.limits).sort();
   const prior = keys.filter(k2=>k2<=k).pop();
   if(prior) return DB.limits[prior];
-  return DB.categories.map((_,i)=>DEFAULT_LIMITS[i]||3000);
+  return DB.categories.map(()=>3000);
 }
 
 function getCatColor(i){

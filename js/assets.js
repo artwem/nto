@@ -55,7 +55,12 @@ function renderAssets(){
   allDates.forEach(date=>{
     Object.assign(running,byDate[date]);
     labels.push(date.slice(5));
-    data.push(Math.round(Object.values(running).reduce((s,v)=>s+v,0)));
+    // Subtract credit banks from total
+    let total = 0;
+    Object.entries(running).forEach(([bname,amt]) => {
+      total += (DB.creditBanks||[]).includes(bname) ? -amt : amt;
+    });
+    data.push(Math.round(total));
   });
   if(charts.assets) charts.assets.destroy();
   if(labels.length>0){
