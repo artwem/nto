@@ -12,7 +12,21 @@ function showPage(name,btn){
   if(name==='day') renderDay();
   if(name==='stats') renderStats();
   if(name==='assets') renderAssets();
-  if(name==='calc'){setTimeout(calcUpdate,50);}
+  if(name==='calc'){
+    // Pre-fill start amount with current total assets
+    const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+    const byBank = {};
+    (DB.assets||[]).forEach(a => {
+      const bname = a.bankName || allBanks[a.bank] || '';
+      if(!byBank[bname] || a.date > byBank[bname].date) byBank[bname] = a;
+    });
+    let total = 0;
+    Object.entries(byBank).forEach(([name, a]) => {
+      total += (DB.creditBanks||[]).includes(name) ? -a.amount : a.amount;
+    });
+    if(total > 0) document.getElementById('calc-start').value = Math.round(total);
+    setTimeout(calcUpdate, 50);
+  }
   if(name==='income') renderIncome();
   if(name==='settings') renderSettings();
 }

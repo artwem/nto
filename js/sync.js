@@ -133,6 +133,8 @@ function setSyncStatus(state, isoTs){
   const dot    = document.getElementById('sync-dot');
   const text   = document.getElementById('sync-text');
   if(!widget) return;
+  // Only show if URL configured
+  if(!DB.syncUrl && state !== 'error') { widget.style.display = 'none'; return; }
   widget.style.display = 'flex';
   dot.className = 'sync-dot ' + state;
   if(state === 'syncing'){
@@ -156,6 +158,7 @@ function syncWidgetTap(){
 function initSyncWidget(){
   if(!DB.syncUrl) return;
   const lastSync = localStorage.getItem('lastSync') || sessionStorage.getItem('lastSync');
+  // 'none' = grey (never synced, not an error), 'ok' = green
   setSyncStatus(lastSync ? 'ok' : 'none', lastSync);
 }
 

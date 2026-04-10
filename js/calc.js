@@ -109,7 +109,7 @@ function calcUpdate(){
         {label:'Вложено',data:dataInvested,borderColor:'#c8c7c0',backgroundColor:'transparent',fill:false,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
       ]
     },
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>v.dataset.label+': '+fmtCalc(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888',maxTicksLimit:8,callback:(v,i)=>{const mo=labels[i];return mo%12===0?mo/12+'г':mo;}}},y:{grid:{color:'rgba(128,128,128,.08)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}}}}
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>v.dataset.label+': '+fmtCalc(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888',maxTicksLimit:8,callback:(v,i)=>{const mo=labels[i];return mo%12===0?mo/12+'г':mo;}}},y:{min:0,grid:{color:'rgba(128,128,128,.08)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888',maxTicksLimit:6}}}}
   });
 
   // Yearly table

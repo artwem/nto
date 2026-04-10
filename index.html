@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#ffffff">
-<title>Бюджет</title>
+<title>V.O.I.D.</title>
 <script>
   // Set base href dynamically so relative paths work on GitHub Pages (/repo-name/)
   // and at root (/) equally
@@ -34,10 +34,7 @@
   <div class="hdr">
     <div class="hdr-row">
       <h1>Бюджет</h1>
-      <div class="sync-widget" id="sync-widget" onclick="syncWidgetTap()" style="display:none">
-        <div class="sync-dot none" id="sync-dot"></div>
-        <span class="sync-text" id="sync-text">Синхр.</span>
-      </div>
+
     </div>
     <div class="month-nav">
       <button class="mn-btn" onclick="changeMonth(-1)">‹</button>
@@ -178,7 +175,6 @@
         <select id="calc-cap" style="margin-top:4px;border:none;padding:0;font-size:14px;font-weight:500;background:transparent;width:100%;-webkit-appearance:none" onchange="calcUpdate()">
           <option value="daily">Ежедневная</option>
           <option value="monthly" selected>Ежемесячная</option>
-          <option value="yearly">Ежегодная</option>
           <option value="none">Без капитализации</option>
         </select>
       </div>
@@ -292,13 +288,19 @@
   </button>
   <button class="nav-btn" onclick="showPage('calc',this)" id="nav-calc">
     <svg viewBox="0 0 22 22" fill="none"><rect x="3" y="3" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M7 8h8M7 11h5M7 14h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="16" cy="14" r="2" fill="currentColor" opacity=".7"/></svg>
-    Вклад
+    Калькулятор
   </button>
   <button class="nav-btn" onclick="showPage('settings',this)" id="nav-settings">
     <svg viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M11 2v2m0 14v2M2 11h2m14 0h2m-3.05-6.95-1.41 1.41M4.46 17.54l1.41-1.41M4.46 4.46l1.41 1.41m11.67 11.67-1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     Настройки
   </button>
 </nav>
+
+<!-- SYNC WIDGET fixed top-right -->
+<div class="sync-widget" id="sync-widget" onclick="syncWidgetTap()" style="display:none;position:fixed;top:12px;right:12px;z-index:99">
+  <div class="sync-dot none" id="sync-dot"></div>
+  <span class="sync-text" id="sync-text">Синхр.</span>
+</div>
 
 <!-- FAB -->
 <button class="fab" onclick="openAddExpense()" id="fab"></button>
@@ -598,7 +600,12 @@ function readSyncUrlFromCookie(){
 // ─── HELPERS ────────────────────────────────────────────────────────
 function monthKey(y,m){return y+'-'+String(m+1).padStart(2,'0')}
 function fmt(n){return Math.round(n).toLocaleString('ru-RU')+'₽'}
-function fmtShort(n){if(Math.abs(n)>=1000)return Math.round(n/1000)+'к';return Math.round(n)+''}
+function fmtShort(n){
+  const a = Math.abs(n);
+  if(a >= 1000000) return (n/1000000).toFixed(1).replace('.0','')+'М';
+  if(a >= 1000)    return (n/1000).toFixed(0)+'к';
+  return Math.round(n)+'';
+}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function today(){
   const d = new Date();
@@ -668,7 +675,21 @@ function showPage(name,btn){
   if(name==='day') renderDay();
   if(name==='stats') renderStats();
   if(name==='assets') renderAssets();
-  if(name==='calc'){setTimeout(calcUpdate,50);}
+  if(name==='calc'){
+    // Pre-fill start amount with current total assets
+    const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+    const byBank = {};
+    (DB.assets||[]).forEach(a => {
+      const bname = a.bankName || allBanks[a.bank] || '';
+      if(!byBank[bname] || a.date > byBank[bname].date) byBank[bname] = a;
+    });
+    let total = 0;
+    Object.entries(byBank).forEach(([name, a]) => {
+      total += (DB.creditBanks||[]).includes(name) ? -a.amount : a.amount;
+    });
+    if(total > 0) document.getElementById('calc-start').value = Math.round(total);
+    setTimeout(calcUpdate, 50);
+  }
   if(name==='income') renderIncome();
   if(name==='settings') renderSettings();
 }
@@ -1523,6 +1544,8 @@ function setSyncStatus(state, isoTs){
   const dot    = document.getElementById('sync-dot');
   const text   = document.getElementById('sync-text');
   if(!widget) return;
+  // Only show if URL configured
+  if(!DB.syncUrl && state !== 'error') { widget.style.display = 'none'; return; }
   widget.style.display = 'flex';
   dot.className = 'sync-dot ' + state;
   if(state === 'syncing'){
@@ -1546,6 +1569,7 @@ function syncWidgetTap(){
 function initSyncWidget(){
   if(!DB.syncUrl) return;
   const lastSync = localStorage.getItem('lastSync') || sessionStorage.getItem('lastSync');
+  // 'none' = grey (never synced, not an error), 'ok' = green
   setSyncStatus(lastSync ? 'ok' : 'none', lastSync);
 }
 
@@ -1673,7 +1697,7 @@ function calcUpdate(){
         {label:'Вложено',data:dataInvested,borderColor:'#c8c7c0',backgroundColor:'transparent',fill:false,tension:0.3,pointRadius:0,borderWidth:1.5,borderDash:[4,3]}
       ]
     },
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>v.dataset.label+': '+fmtCalc(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888',maxTicksLimit:8,callback:(v,i)=>{const mo=labels[i];return mo%12===0?mo/12+'г':mo;}}},y:{grid:{color:'rgba(128,128,128,.08)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}}}}
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>v.dataset.label+': '+fmtCalc(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888',maxTicksLimit:8,callback:(v,i)=>{const mo=labels[i];return mo%12===0?mo/12+'г':mo;}}},y:{min:0,grid:{color:'rgba(128,128,128,.08)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888',maxTicksLimit:6}}}}
   });
 
   // Yearly table

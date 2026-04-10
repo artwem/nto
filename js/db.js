@@ -102,7 +102,12 @@ function readSyncUrlFromCookie(){
 // ─── HELPERS ────────────────────────────────────────────────────────
 function monthKey(y,m){return y+'-'+String(m+1).padStart(2,'0')}
 function fmt(n){return Math.round(n).toLocaleString('ru-RU')+'₽'}
-function fmtShort(n){if(Math.abs(n)>=1000)return Math.round(n/1000)+'к';return Math.round(n)+''}
+function fmtShort(n){
+  const a = Math.abs(n);
+  if(a >= 1000000) return (n/1000000).toFixed(1).replace('.0','')+'М';
+  if(a >= 1000)    return (n/1000).toFixed(0)+'к';
+  return Math.round(n)+'';
+}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function today(){
   const d = new Date();

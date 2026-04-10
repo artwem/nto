@@ -1,7 +1,7 @@
 {
-  "name": "Бюджет Трекер",
-  "short_name": "Бюджет",
-  "description": "Личный трекер расходов и накоплений",
+  "name": "V.O.I.D.",
+  "short_name": "V.O.I.D.",
+  "description": "Visual Overview of Income & Debt",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f7f6f1",
