@@ -6,40 +6,70 @@ function isCredit(bankName){
 
 function renderAssetsHistory(rows, showAll){
   const tbl = document.getElementById('assets-history-table');
+  if(!tbl) return;
   const LIMIT = 5;
   const visible = showAll ? rows : rows.slice(0, LIMIT);
   const hasMore = rows.length > LIMIT;
 
-  let html = '<tr style="background:var(--bg)">'
-    + '<th style="padding:6px 8px;text-align:left;color:var(--muted);font-weight:500;font-size:11px">Дата</th>'
-    + '<th style="padding:6px 8px;text-align:right;color:var(--muted);font-weight:500;font-size:11px">Общий актив</th>'
-    + '</tr>';
+  tbl.innerHTML = '';
 
-  visible.forEach((r, idx) => {
-    const prev = rows[rows.indexOf(r) + 1];
-    const diff = prev ? r.total - prev.total : null;
-    const diffStr = diff !== null
-      ? '<span style="font-size:10px;margin-left:6px;color:'+(diff>=0?'#1d9e75':'var(--red)')+'">'+
-        (diff>=0?'+':'')+fmtShort(diff)+'₽</span>'
-      : '';
-    const dateAttr = 'openEditAssetDate(&quot;'+r.date+'&quot;)';
-    html += '<tr style="border-top:0.5px solid var(--border);cursor:pointer" onclick="'+dateAttr+'" title="Редактировать / удалить">'
-      + '<td style="padding:7px 8px;font-size:12px;color:var(--muted)">'+r.date+' <span style=\"opacity:.5;font-size:10px\">✎</span></td>'
-      + '<td style="padding:7px 8px;font-size:13px;font-weight:600;text-align:right;color:var(--text)">'+fmt(r.total)+diffStr+'</td>'
-      + '</tr>';
+  // Header
+  const hdr = tbl.insertRow();
+  hdr.style.background = 'var(--bg)';
+  ['Дата','Общий актив'].forEach((t, i) => {
+    const th = document.createElement('th');
+    th.textContent = t;
+    th.style.cssText = 'padding:6px 8px;text-align:'+(i?'right':'left')+';color:var(--muted);font-weight:500;font-size:11px';
+    hdr.appendChild(th);
   });
 
-  if(hasMore && !showAll){
-    html += '<tr><td colspan="2" style="padding:8px;text-align:center">'
-      + '<button class="btn small" style="font-size:12px;width:100%" onclick="expandAssetsHistory()">'
-      + 'Показать все ' + rows.length + ' записей</button></td></tr>';
-  } else if(hasMore && showAll){
-    html += '<tr><td colspan="2" style="padding:8px;text-align:center">'
-      + '<button class="btn small" style="font-size:12px;width:100%" onclick="collapseAssetsHistory()">'
-      + 'Скрыть ▲</button></td></tr>';
-  }
+  // Data rows
+  visible.forEach((r) => {
+    const prev = rows[rows.indexOf(r) + 1];
+    const diff = prev ? r.total - prev.total : null;
 
-  tbl.innerHTML = html;
+    const tr = tbl.insertRow();
+    tr.style.cssText = 'border-top:0.5px solid var(--border);cursor:pointer';
+    tr.title = 'Нажмите чтобы редактировать';
+    tr.addEventListener('click', function(){ openEditAssetDate(r.date); });
+
+    const td1 = tr.insertCell();
+    td1.style.cssText = 'padding:7px 8px;font-size:12px;color:var(--muted)';
+    td1.textContent = r.date;
+    const pencil = document.createElement('span');
+    pencil.textContent = ' ✎';
+    pencil.style.cssText = 'opacity:.4;font-size:10px';
+    td1.appendChild(pencil);
+
+    const td2 = tr.insertCell();
+    td2.style.cssText = 'padding:7px 8px;font-size:13px;font-weight:600;text-align:right;color:var(--text)';
+    td2.textContent = fmt(r.total);
+    if(diff !== null){
+      const sp = document.createElement('span');
+      sp.style.cssText = 'font-size:10px;margin-left:6px;color:'+(diff>=0?'#1d9e75':'var(--red)');
+      sp.textContent = (diff>=0?'+':'')+fmtShort(diff)+'₽';
+      td2.appendChild(sp);
+    }
+  });
+
+  // Show more / collapse button
+  if(hasMore){
+    const tr = tbl.insertRow();
+    const td = tr.insertCell();
+    td.colSpan = 2;
+    td.style.padding = '8px';
+    const btn = document.createElement('button');
+    btn.className = 'btn small';
+    btn.style.cssText = 'font-size:12px;width:100%';
+    if(!showAll){
+      btn.textContent = 'Показать все ' + rows.length + ' записей';
+      btn.onclick = expandAssetsHistory;
+    } else {
+      btn.textContent = 'Скрыть ▲';
+      btn.onclick = collapseAssetsHistory;
+    }
+    td.appendChild(btn);
+  }
 }
 
 let _assetsHistoryRows = [];
