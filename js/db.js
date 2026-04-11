@@ -53,9 +53,6 @@ function loadDB(){
   if(!DB.banks) DB.banks = [];
   if(!DB.creditBanks) DB.creditBanks = [];
   if(!DB.catColors) DB.catColors = {};
-  if(!DB.catGroups) DB.catGroups = {};
-  if(!DB.catGroups) DB.catGroups = {};
-  if(!DB.catGroupMap) DB.catGroupMap = {};
   if(!DB.incomes) DB.incomes = [];
   if(!DB.catRenames) DB.catRenames = [];
   if(!DB.bankRenames) DB.bankRenames = [];
@@ -67,8 +64,6 @@ function saveDB(){
   DB._dirty = true;
   localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
 }
-
-
 
 // ─── SYNC URL PERSISTENCE ────────────────────────────────────────────
 // iOS PWA has separate localStorage from Safari — use cookies as bridge
@@ -133,10 +128,6 @@ function getCatGroup(i){
   return peers.length > 0 ? color : null; // group identified by color
 }
 
-// All indices sharing this color
-function getGroupIndices(color){
-  return DB.categories.map((_,i) => i).filter(i => getCatColor(i) === color);
-}
 
 function getMonthExpenses(y,m){
   const k = monthKey(y,m);

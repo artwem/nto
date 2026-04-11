@@ -631,9 +631,6 @@ function loadDB(){
   if(!DB.banks) DB.banks = [];
   if(!DB.creditBanks) DB.creditBanks = [];
   if(!DB.catColors) DB.catColors = {};
-  if(!DB.catGroups) DB.catGroups = {};
-  if(!DB.catGroups) DB.catGroups = {};
-  if(!DB.catGroupMap) DB.catGroupMap = {};
   if(!DB.incomes) DB.incomes = [];
   if(!DB.catRenames) DB.catRenames = [];
   if(!DB.bankRenames) DB.bankRenames = [];
@@ -645,8 +642,6 @@ function saveDB(){
   DB._dirty = true;
   localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
 }
-
-
 
 // ─── SYNC URL PERSISTENCE ────────────────────────────────────────────
 // iOS PWA has separate localStorage from Safari — use cookies as bridge
@@ -711,10 +706,6 @@ function getCatGroup(i){
   return peers.length > 0 ? color : null; // group identified by color
 }
 
-// All indices sharing this color
-function getGroupIndices(color){
-  return DB.categories.map((_,i) => i).filter(i => getCatColor(i) === color);
-}
 
 function getMonthExpenses(y,m){
   const k = monthKey(y,m);
@@ -1309,10 +1300,10 @@ function renderAssetsHistory(rows, showAll){
   // Header
   const hdr = tbl.insertRow();
   hdr.style.background = 'var(--bg)';
-  ['Дата','Общий актив',''].forEach((t, i) => {
+  [{t:'Дата',a:'left'},{t:'Общий актив',a:'right'},{t:'',a:'center'}].forEach(({t,a}) => {
     const th = document.createElement('th');
     th.textContent = t;
-    th.style.cssText = 'padding:6px 8px;text-align:'+(i?'right':'left')+';color:var(--muted);font-weight:500;font-size:11px';
+    th.style.cssText = 'padding:6px 8px;text-align:'+a+';color:var(--muted);font-weight:500;font-size:11px';
     hdr.appendChild(th);
   });
 
@@ -1634,7 +1625,6 @@ function openEditAssetDate(date){
   } else {
     document.getElementById('asset-amount').value = '';
   }
-  document.getElementById('asset-comment').value = '';
   // Show delete-date button
   const delBtn = document.getElementById('asset-delete-date-btn');
   if(delBtn) { delBtn.style.display = 'block'; delBtn.dataset.date = date; }

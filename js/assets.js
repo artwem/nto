@@ -16,10 +16,10 @@ function renderAssetsHistory(rows, showAll){
   // Header
   const hdr = tbl.insertRow();
   hdr.style.background = 'var(--bg)';
-  ['Дата','Общий актив',''].forEach((t, i) => {
+  [{t:'Дата',a:'left'},{t:'Общий актив',a:'right'},{t:'',a:'center'}].forEach(({t,a}) => {
     const th = document.createElement('th');
     th.textContent = t;
-    th.style.cssText = 'padding:6px 8px;text-align:'+(i?'right':'left')+';color:var(--muted);font-weight:500;font-size:11px';
+    th.style.cssText = 'padding:6px 8px;text-align:'+a+';color:var(--muted);font-weight:500;font-size:11px';
     hdr.appendChild(th);
   });
 
@@ -341,7 +341,6 @@ function openEditAssetDate(date){
   } else {
     document.getElementById('asset-amount').value = '';
   }
-  document.getElementById('asset-comment').value = '';
   // Show delete-date button
   const delBtn = document.getElementById('asset-delete-date-btn');
   if(delBtn) { delBtn.style.display = 'block'; delBtn.dataset.date = date; }
