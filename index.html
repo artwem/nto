@@ -1309,7 +1309,7 @@ function renderAssetsHistory(rows, showAll){
   // Header
   const hdr = tbl.insertRow();
   hdr.style.background = 'var(--bg)';
-  ['Дата','Общий актив'].forEach((t, i) => {
+  ['Дата','Общий актив',''].forEach((t, i) => {
     const th = document.createElement('th');
     th.textContent = t;
     th.style.cssText = 'padding:6px 8px;text-align:'+(i?'right':'left')+';color:var(--muted);font-weight:500;font-size:11px';
@@ -1322,27 +1322,33 @@ function renderAssetsHistory(rows, showAll){
     const diff = prev ? r.total - prev.total : null;
 
     const tr = tbl.insertRow();
-    tr.style.cssText = 'border-top:0.5px solid var(--border);cursor:pointer';
-    tr.title = 'Нажмите чтобы редактировать';
-    tr.addEventListener('click', function(){ openEditAssetDate(r.date); });
+    tr.style.cssText = 'border-top:0.5px solid var(--border)';
+
+    const _date = r.date; // capture for closure
 
     const td1 = tr.insertCell();
-    td1.style.cssText = 'padding:7px 8px;font-size:12px;color:var(--muted)';
+    td1.style.cssText = 'padding:12px 8px;font-size:13px;color:var(--muted);cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,.05)';
     td1.textContent = r.date;
-    const pencil = document.createElement('span');
-    pencil.textContent = ' ✎';
-    pencil.style.cssText = 'opacity:.4;font-size:10px';
-    td1.appendChild(pencil);
 
     const td2 = tr.insertCell();
-    td2.style.cssText = 'padding:7px 8px;font-size:13px;font-weight:600;text-align:right;color:var(--text)';
+    td2.style.cssText = 'padding:12px 8px;font-size:13px;font-weight:600;text-align:right;color:var(--text)';
     td2.textContent = fmt(r.total);
     if(diff !== null){
       const sp = document.createElement('span');
-      sp.style.cssText = 'font-size:10px;margin-left:6px;color:'+(diff>=0?'#1d9e75':'var(--red)');
+      sp.style.cssText = 'font-size:11px;margin-left:6px;color:'+(diff>=0?'#1d9e75':'var(--red)');
       sp.textContent = (diff>=0?'+':'')+fmtShort(diff)+'₽';
       td2.appendChild(sp);
     }
+
+    // Edit button — separate cell, big tap target
+    const td3 = tr.insertCell();
+    td3.style.cssText = 'padding:8px 6px;text-align:center;width:44px';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn small';
+    editBtn.textContent = '✎';
+    editBtn.style.cssText = 'width:36px;height:36px;font-size:16px;padding:0;display:flex;align-items:center;justify-content:center';
+    editBtn.addEventListener('click', function(e){ e.stopPropagation(); openEditAssetDate(_date); });
+    td3.appendChild(editBtn);
   });
 
   // Show more / collapse button
