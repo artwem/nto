@@ -324,27 +324,88 @@ function removeBank(type, i){
 }
 
 // ─── ASSET RECORD EDIT / DELETE ─────────────────────────────────────
+let _editingAssetDate = null;
+
 function openEditAssetDate(date){
-  // Open modal pre-filled for editing a specific date
+  _editingAssetDate = date;
   const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
-  document.getElementById('asset-bank').innerHTML = allBanks.map((b,i) => {
-    const credit = i >= (DB.banks||[]).length;
-    return '<option value="'+i+'">'+b+(credit?' (кредит)':'')+'</option>';
-  }).join('');
-  document.getElementById('asset-date').value = date;
-  // Pre-fill amount from most recent entry for first bank on this date
-  const existing = DB.assets.filter(a => a.date === date);
-  if(existing.length > 0){
-    const bankIdx = allBanks.indexOf(existing[0].bankName);
-    if(bankIdx >= 0) document.getElementById('asset-bank').value = bankIdx;
-    document.getElementById('asset-amount').value = existing[0].amount;
-  } else {
-    document.getElementById('asset-amount').value = '';
+
+  document.getElementById('asset-edit-title').textContent = 'Активы за ' + date;
+
+  const container = document.getElementById('asset-edit-rows');
+  container.innerHTML = '';
+
+  // Show a row for every known bank — pre-fill from existing records
+  const byBank = {};
+  DB.assets.filter(a => a.date === date).forEach(a => { byBank[a.bankName] = a.amount; });
+
+  allBanks.forEach((bankName, idx) => {
+    const credit = isCredit(bankName);
+    const existing = byBank[bankName];
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-top:0.5px solid var(--border)';
+
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'flex:1;font-size:13px;color:'+(credit?'var(--red)':'var(--text)');
+    lbl.textContent = bankName;
+
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.inputMode = 'decimal';
+    inp.id = 'asset-edit-inp-'+idx;
+    inp.placeholder = '0';
+    inp.value = existing !== undefined ? existing : '';
+    inp.style.cssText = 'width:120px;text-align:right;padding:6px 8px;font-size:14px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text)';
+
+    row.appendChild(lbl);
+    row.appendChild(inp);
+    container.appendChild(row);
+  });
+
+  if(!allBanks.length){
+    container.innerHTML = '<div style="padding:16px 0;text-align:center;color:var(--muted);font-size:13px">Нет счетов. Добавьте банки в разделе «Управлять».</div>';
   }
-  // Show delete-date button
-  const delBtn = document.getElementById('asset-delete-date-btn');
-  if(delBtn) { delBtn.style.display = 'block'; delBtn.dataset.date = date; }
-  openModal('modal-asset');
+
+  openModal('modal-asset-edit');
+}
+
+function saveAssetEdit(){
+  if(!_editingAssetDate) return;
+  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const date = _editingAssetDate;
+
+  // Remove existing records for this date
+  DB.assets = DB.assets.filter(a => a.date !== date);
+
+  // Save new values for each bank that has a value
+  allBanks.forEach((bankName, idx) => {
+    const inp = document.getElementById('asset-edit-inp-'+idx);
+    if(!inp) return;
+    const val = parseFloat(inp.value);
+    if(!val || val <= 0) return; // skip empty/zero
+    DB.assets.push({
+      id: uid(),
+      bank: idx,
+      bankName,
+      amount: val,
+      date
+    });
+  });
+
+  saveDB();
+  closeModal('modal-asset-edit');
+  renderAssets();
+  toast('Сохранено за ' + date);
+}
+
+function deleteAssetDateConfirm(){
+  if(!_editingAssetDate) return;
+  DB.assets = DB.assets.filter(a => a.date !== _editingAssetDate);
+  saveDB();
+  closeModal('modal-asset-edit');
+  renderAssets();
+  toast('Записи за ' + _editingAssetDate + ' удалены');
 }
 
 function deleteAssetDate(date){
