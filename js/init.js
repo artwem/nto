@@ -31,7 +31,7 @@ async function autoSyncOnStart(){
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
-  } catch(e){ setSyncStatus('error'); }
+  } catch(e){ setSyncStatus('error'); _syncInProgress = false; return; }
   _syncInProgress = false;
 }
 
@@ -82,9 +82,6 @@ function mergePullData(d){
   // - Deleted entries (_deleted) are cleaned up if sheet no longer has them
   // - Comments preserved from app if sheet has no comment
   if(d.expenses !== undefined){
-    const sheetById = {};
-    (d.expenses||[]).forEach(e => { sheetById[e.id] = e; });
-
     // Build set of cat+date covered by sheet
     const sheetKeys = new Set((d.expenses||[]).map(e => e.cat+'_'+e.date));
 

@@ -2404,7 +2404,13 @@ async function pullFromSheets(){
     mergePullData(d);
     DB._dirty = false;
     localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
-    renderBudget();
+    // Re-render whatever page is currently open
+    if(currentPage==='budget') renderBudget();
+    else if(currentPage==='day') renderDay();
+    else if(currentPage==='stats') renderStats();
+    else if(currentPage==='assets') renderAssets();
+    else if(currentPage==='income') renderIncome();
+    else renderBudget();
     const ts = new Date().toISOString();
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
@@ -2538,8 +2544,6 @@ function startAutoSync(){
     _syncInFlight = false;
   }, ms);
 }
-
-
 
 // ── Loader кода Apps Script ───────────────────────────────────────────
 async function loadAppsScriptCode() {
@@ -2815,7 +2819,7 @@ async function autoSyncOnStart(){
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
-  } catch(e){ setSyncStatus('error'); }
+  } catch(e){ setSyncStatus('error'); _syncInProgress = false; return; }
   _syncInProgress = false;
 }
 
@@ -2866,9 +2870,6 @@ function mergePullData(d){
   // - Deleted entries (_deleted) are cleaned up if sheet no longer has them
   // - Comments preserved from app if sheet has no comment
   if(d.expenses !== undefined){
-    const sheetById = {};
-    (d.expenses||[]).forEach(e => { sheetById[e.id] = e; });
-
     // Build set of cat+date covered by sheet
     const sheetKeys = new Set((d.expenses||[]).map(e => e.cat+'_'+e.date));
 
