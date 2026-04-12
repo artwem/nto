@@ -1000,7 +1000,7 @@ function editExpense(id, e){
   document.getElementById('exp-delete-btn').style.display='block';
   populateCatSelect('exp-cat');
   document.getElementById('exp-cat').value = exp.cat;
-  document.getElementById('exp-amount').value = exp.amount;
+  document.getElementById('exp-amount').value = '';
   document.getElementById('exp-date').value = exp.date;
   document.getElementById('exp-comment').value = exp.comment||'';
   openModal('modal-expense');
@@ -1016,7 +1016,19 @@ function saveExpense(){
 
   if(editingExpenseId){
     const idx = DB.expenses.findIndex(e=>e.id===editingExpenseId);
-    if(idx>=0) DB.expenses[idx] = {...DB.expenses[idx], cat, amount:amt, date, comment};
+    if(idx>=0){
+      const cur = DB.expenses[idx];
+      // If category or date changed — zero out the old cell in the sheet
+      if(cur.cat !== cat || cur.date !== date){
+        // Mark old record as deleted so push zeroes it out in the sheet
+        DB.expenses.push({...cur, amount:0, _deleted:true, id:'gs_'+cur.cat+'_'+cur.date.replace(/-/g,'')});
+      }
+      const newAmt = _addMode ? Math.round((cur.amount + amt) * 100) / 100 : amt;
+      const newComment = comment
+        ? (_addMode && cur.comment ? cur.comment + '; ' + comment : comment)
+        : cur.comment;
+      DB.expenses[idx] = {...cur, cat, amount:newAmt, date, comment:newComment};
+    }
   } else {
     const existing = DB.expenses.find(e => e.cat===cat && e.date===date && !e._deleted);
     if(existing){
