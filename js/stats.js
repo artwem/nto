@@ -25,7 +25,7 @@ function renderStats(){
   charts.pie=new Chart(document.getElementById('chartPie'),{
     type:'doughnut',
     data:{labels:nonZero.map(x=>DB.categories[x.i]),datasets:[{data:nonZero.map(x=>x.v),backgroundColor:nonZero.map(x=>getCatColor(x.i)),borderWidth:2,borderColor:'rgba(0,0,0,0)'}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'right',labels:{color:'var(--text)',font:{size:10},padding:6,boxWidth:10,generateLabels:chart=>{const d=chart.data;return d.labels.map((l,i)=>({text:l.length>13?l.slice(0,13)+'…':l,fillStyle:d.datasets[0].backgroundColor[i],strokeStyle:'transparent',lineWidth:0,index:i}));}}}}}
+    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'right',labels:{color:'#888',font:{size:10},padding:6,boxWidth:10,generateLabels:chart=>{const d=chart.data;return d.labels.map((l,i)=>({text:l.length>13?l.slice(0,13)+'…':l,fillStyle:d.datasets[0].backgroundColor[i],strokeStyle:'transparent',lineWidth:0,index:i}));}}}}}
   });
   const sorted=[...nonZero].sort((a,b)=>b.v-a.v).slice(0,7);
   const topH=Math.max(140,sorted.length*36+40);
