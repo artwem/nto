@@ -11,6 +11,25 @@ const SHEET_INCOME   = 'Доходы';
 const SHEET_COLORS   = 'Настройки';
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                    'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+// Дефолтные категории — используются только при создании пустого Шаблона
+const DEFAULT_CATS = [
+  'ЖКУ + аренда','Ремонт и быт',
+  'Продукты','Кафе и доставка',
+  'Транспорт и такси','Авто',
+  'Аптека и врачи','Спорт',
+  'Одежда и уход','Подписки и связь',
+  'Подарки','Непредвиденные'
+];
+const DEFAULT_LIMITS = [15000,3000, 18000,6000, 4000,5000, 3000,2000, 5000,2000, 3000,5000];
+const DEFAULT_COLORS = {
+  'ЖКУ + аренда':'#185fa5',    'Ремонт и быт':'#185fa5',
+  'Продукты':'#1d9e75',         'Кафе и доставка':'#1d9e75',
+  'Транспорт и такси':'#d85a30','Авто':'#d85a30',
+  'Аптека и врачи':'#8e44ad',   'Спорт':'#8e44ad',
+  'Одежда и уход':'#d4537e',    'Подписки и связь':'#d4537e',
+  'Подарки':'#7f8c8d',          'Непредвиденные':'#7f8c8d'
+};
+
 // POST с Content-Type: text/plain — без CORS preflight
 function doPost(e) {
   try {
@@ -129,12 +148,18 @@ function getOrCreateDaysSheet(ss, yr) {
 
 // ── ПЕРВЫЙ ЗАПУСК: создать нужные листы ───────────────────────────────
 function setupSheets(ss) {
-  // Template sheet — empty, user fills categories from app
+  // Template sheet — pre-filled with default categories and limits
   if (!ss.getSheetByName(SHEET_TEMPLATE)) {
     const t = ss.insertSheet(SHEET_TEMPLATE);
     t.getRange(1,1,1,5).setValues([['Статья Расходов','Сумма/Мес','Доля Общая','Доля Лимита','Лимиты']]);
+    // Row 2 = Итого (fixed, never moves)
     t.getRange(2,1).setValue('Итого');
-    t.getRange(2,5).setFormula('=SUM(E3:E1000)');
+    t.getRange(2,5).setFormula('=SUM(E3:E)');
+    // Rows 3+ = default categories
+    DEFAULT_CATS.forEach((cat, i) => {
+      t.getRange(i+3, 1).setValue(cat);
+      t.getRange(i+3, 5).setValue(DEFAULT_LIMITS[i] || 0);
+    });
   }
 
   // По дням YYYY — migrate legacy sheet first, then create if needed
@@ -146,16 +171,24 @@ function setupSheets(ss) {
   if (!ss.getSheetByName(daysSheetName(curYr))) {
     getOrCreateDaysSheet(ss, curYr);
   }
+  // Always ensure current month sheet exists
+  const now = new Date();
+  getOrCreateMonthSheet(ss, now.getFullYear(), now.getMonth());
 
   ensureSheet(ss, SHEET_ASSETS, ['Общий актив','Дата']);
 
   // Hidden service sheets
-  const incSh = ensureSheet(ss, SHEET_INCOME,   ['id','date','source','amount','comment','month']);
+  const incSh  = ensureSheet(ss, SHEET_INCOME,   ['id','date','source','amount','comment','month']);
   const commSh = ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);
   const colSh  = ensureSheet(ss, SHEET_COLORS,   ['Категория','Цвет']);
   if (incSh.isSheetHidden()  === false) incSh.hideSheet();
   if (commSh.isSheetHidden() === false) commSh.hideSheet();
   if (colSh.isSheetHidden()  === false) colSh.hideSheet();
+  // Pre-fill colors sheet with defaults if empty
+  if (colSh.getLastRow() <= 1) {
+    const colorRows = DEFAULT_CATS.map(cat => [cat, DEFAULT_COLORS[cat] || '#7f8c8d']);
+    colSh.getRange(2, 1, colorRows.length, 2).setValues(colorRows);
+  }
 }
 
 function getOrCreateMonthSheet(ss, yr, mo) {
@@ -387,6 +420,8 @@ function pushAll(data) {
   }
 
   // Add new categories to ALL year sheets
+  // Append category AFTER the last data row (never before Итого on row 2)
+  // Structure: row1=header, row2=Итого(fixed), row3..=categories
   function ensureCatInSheet(sh, cat) {
     const d = sh.getDataRange().getValues();
     const existing = {};
@@ -395,21 +430,26 @@ function pushAll(data) {
       if (c && c !== 'Итого') existing[c] = r;
     }
     if (existing[cat] || cat === 'Итого') return existing;
-    // Find Итого row
-    let iRow = sh.getLastRow();
-    for (let r = 1; r <= sh.getLastRow(); r++) {
-      if (sh.getRange(r,1).getValue() === 'Итого') { iRow = r; break; }
-    }
-    sh.insertRowBefore(iRow);
-    sh.getRange(iRow, 1).setValue(cat);
-    existing[cat] = iRow - 1;
+    // Append after last row — Итого stays on row 2, categories grow downward
+    const newRow = sh.getLastRow() + 1;
+    sh.getRange(newRow, 1).setValue(cat);
+    existing[cat] = newRow - 1;
     return existing;
   }
 
-  // Build catRowMap from primary sheet after adding new cats
+  // Add new categories to all По дням sheets AND Template
   const catRowMap = {};
+  const tmplShForCats = ss.getSheetByName(SHEET_TEMPLATE);
   for (const cat of categories) {
     allDaysSheetsForPush.forEach(sh => ensureCatInSheet(sh, cat));
+    // Also ensure category exists in Template (for month sheets)
+    if (tmplShForCats) {
+      const td = tmplShForCats.getDataRange().getValues();
+      const tExists = td.some((r,i) => i>0 && String(r[0]) === cat);
+      if (!tExists) {
+        tmplShForCats.appendRow([cat, 0, 0, 0, 0]);
+      }
+    }
   }
   // Rebuild from primary
   const primaryData = primaryDsSh.getDataRange().getValues();
@@ -513,26 +553,37 @@ function pushAll(data) {
   }
 
   // --- 4. Лимиты ---
-  Object.entries(data.limits||{}).forEach(([key,limArr]) => {
-    if (!Array.isArray(limArr)) return;
-    const [yr,mo] = key.split('-').map(Number);
-    const mSh = getOrCreateMonthSheet(ss, yr, mo-1);
-    const md = mSh.getDataRange().getValues();
+  // Helper: write categories+limits to a month/template sheet
+  function writeLimitsToSheet(sh, categories, limArr) {
+    const md = sh.getDataRange().getValues();
     const mCatRow = {};
     for (let r = 1; r < md.length; r++) {
       if (md[r][0] && String(md[r][0])!=='Итого') mCatRow[String(md[r][0])] = r+1;
     }
-    categories.forEach((cat,idx) => {
-      const lim = limArr[idx]; if (lim===undefined) return;
-      if (mCatRow[cat]) { mSh.getRange(mCatRow[cat],5).setValue(lim); return; }
-      let iRow = mSh.getLastRow();
-      for (let r = 1; r <= mSh.getLastRow(); r++) {
-        if (mSh.getRange(r,1).getValue()==='Итого') { iRow=r; break; }
+    categories.forEach((cat, idx) => {
+      const lim = limArr[idx]; if (lim === undefined) return;
+      if (mCatRow[cat]) {
+        sh.getRange(mCatRow[cat], 5).setValue(lim);
+      } else {
+        // Append new category row
+        const newRow = sh.getLastRow() + 1;
+        sh.getRange(newRow, 1).setValue(cat);
+        sh.getRange(newRow, 5).setValue(lim);
+        mCatRow[cat] = newRow;
       }
-      mSh.insertRowBefore(iRow);
-      mSh.getRange(iRow,1).setValue(cat);
-      mSh.getRange(iRow,5).setValue(lim);
     });
+  }
+
+  // Update Template limits (used as default for new month sheets)
+  const tmplShForLimits = ss.getSheetByName(SHEET_TEMPLATE);
+
+  Object.entries(data.limits||{}).forEach(([key,limArr]) => {
+    if (!Array.isArray(limArr)) return;
+    const [yr,mo] = key.split('-').map(Number);
+    const mSh = getOrCreateMonthSheet(ss, yr, mo-1);
+    writeLimitsToSheet(mSh, categories, limArr);
+    // Mirror to Template so future month sheets inherit correct limits
+    if (tmplShForLimits) writeLimitsToSheet(tmplShForLimits, categories, limArr);
   });
 
   // --- 5. Активы ---

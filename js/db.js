@@ -1,6 +1,25 @@
 // ─── DATA ───────────────────────────────────────────────────────────
 
 const CAT_COLORS = ['#378add','#1d9e75','#d85a30','#ba7517','#d4537e','#639922','#534ab7','#e67e22','#185fa5','#993556','#3b6d11','#a32d2d','#0f6e56','#8e44ad','#993c1d','#7f8c8d'];
+
+// ─── DEFAULTS (first run only) ───────────────────────────────────────
+const DEFAULT_CATS = [
+  'ЖКУ + аренда','Ремонт и быт',        // Жильё   — синий  #185fa5
+  'Продукты','Кафе и доставка',          // Еда     — зелёный #1d9e75
+  'Транспорт и такси','Авто',            // Транспорт — оранжевый #d85a30
+  'Аптека и врачи','Спорт',             // Здоровье — фиолетовый #8e44ad
+  'Одежда и уход','Подписки и связь',   // Личное  — красный #d4537e
+  'Подарки','Непредвиденные'            // Разное  — серый #7f8c8d
+];
+const DEFAULT_LIMITS = [15000,3000, 18000,6000, 4000,5000, 3000,2000, 5000,2000, 3000,5000];
+const DEFAULT_COLORS = {
+  0:'#185fa5', 1:'#185fa5',   // Жильё
+  2:'#1d9e75', 3:'#1d9e75',   // Еда
+  4:'#d85a30', 5:'#d85a30',   // Транспорт
+  6:'#8e44ad', 7:'#8e44ad',   // Здоровье
+  8:'#d4537e', 9:'#d4537e',   // Личное
+  10:'#7f8c8d',11:'#7f8c8d'   // Разное
+};
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const SHORT_MONTHS = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
 
@@ -58,6 +77,13 @@ function loadDB(){
   if(!DB.bankRenames) DB.bankRenames = [];
   if(!DB.categories) DB.categories = [];
   if(!DB.limits) DB.limits = {};
+  // First run — no data at all: populate with defaults so app isn't empty
+  if(!saved && !DB.categories.length){
+    DB.categories = [...DEFAULT_CATS];
+    DB.catColors  = {...DEFAULT_COLORS};
+    const k = monthKey(new Date().getFullYear(), new Date().getMonth());
+    DB.limits[k]  = [...DEFAULT_LIMITS];
+  }
 }
 
 function saveDB(){
