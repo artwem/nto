@@ -76,21 +76,18 @@ function cellToDateStr(v) {
   return '';
 }
 
-// Legacy alias — returns Date object (used only for По дням header loop)
-function cellToDate(v) {
-  const s = cellToDateStr(v);
-  if (!s) return null;
-  const p = s.split('-').map(Number);
-  return new Date(p[0], p[1]-1, p[2]);
-}
-
-// fmtDate kept as alias
-function fmtDate(d) { return cellToDateStr(d); }
-
 function colLetter(n) {
   let s = '';
   while (n > 0) { s = String.fromCharCode(64 + (n-1)%26 + 1) + s; n = Math.floor((n-1)/26); }
   return s;
+}
+
+// Read sheet header row as {name: 1-based-col}
+function _getColMap(sh) {
+  const h = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const m = {};
+  h.forEach((v, i) => { const n = String(v||'').trim(); if (n) m[n] = i + 1; });
+  return m;
 }
 
 function ensureSheet(ss, name, headers) {
@@ -554,7 +551,7 @@ function pushAll(data) {
   for (let r = 1; r < commData.length; r++) {
     if (commData[r][0]==='' || commData[r][0]===null) continue;
     const dv = commData[r][1];
-    const ds = dv instanceof Date ? fmtDate(dv) : String(dv);
+    const ds = dv instanceof Date ? cellToDateStr(dv) : String(dv);
     existComm[commData[r][0]+'_'+ds] = r+1;
   }
   for (const [key,info] of Object.entries(commentMap)) {
@@ -588,14 +585,22 @@ function pushAll(data) {
   // Update Template limits (used as default for new month sheets)
   const tmplShForLimits = ss.getSheetByName(SHEET_TEMPLATE);
 
-  Object.entries(data.limits||{}).forEach(([key,limArr]) => {
-    if (!Array.isArray(limArr)) return;
+  // Write limits to each month sheet
+  // Find the most recent limits entry to mirror to Template (do it once, not per month)
+  let latestLimKey = null;
+  const limitEntries = Object.entries(data.limits||{}).filter(([,v]) => Array.isArray(v));
+  limitEntries.sort((a,b) => b[0].localeCompare(a[0]));
+  if (limitEntries.length) latestLimKey = limitEntries[0][0];
+
+  limitEntries.forEach(([key,limArr]) => {
     const [yr,mo] = key.split('-').map(Number);
     const mSh = getOrCreateMonthSheet(ss, yr, mo-1);
     writeLimitsToSheet(mSh, categories, limArr);
-    // Mirror to Template so future month sheets inherit correct limits
-    if (tmplShForLimits) writeLimitsToSheet(tmplShForLimits, categories, limArr);
   });
+  // Mirror only the most recent limits to Template
+  if (latestLimKey && tmplShForLimits) {
+    writeLimitsToSheet(tmplShForLimits, categories, data.limits[latestLimKey]);
+  }
 
   // --- 5. Активы ---
   const regularBanks = data.banks || [];
@@ -606,20 +611,12 @@ function pushAll(data) {
     const aSh = ss.getSheetByName(SHEET_ASSETS);
     if (!aSh) return written;
 
-    // Helper: read current header as {name: 1basedCol}
-    function getColMap() {
-      const h = aSh.getRange(1, 1, 1, aSh.getLastColumn()).getValues()[0];
-      const m = {};
-      h.forEach((v, i) => { const n = String(v||'').trim(); if (n) m[n] = i + 1; });
-      return m;
-    }
-
-    let colMap = getColMap();
+    let colMap = _getColMap(aSh);
 
     // Layout: col1=Общий актив, col2=Дата, col3..=regular, then credit
     // Ensure base columns exist
-    if (!colMap['Общий актив']) { aSh.getRange(1,1).setValue('Общий актив'); colMap = getColMap(); }
-    if (!colMap['Дата'])        { aSh.getRange(1,2).setValue('Дата');         colMap = getColMap(); }
+    if (!colMap['Общий актив']) { aSh.getRange(1,1).setValue('Общий актив'); colMap = _getColMap(aSh); }
+    if (!colMap['Дата'])        { aSh.getRange(1,2).setValue('Дата');         colMap = _getColMap(aSh); }
 
     // Add missing regular banks: insert before the first credit column (or before last col if no credits)
     for (const bank of regularBanks) {
@@ -633,7 +630,7 @@ function pushAll(data) {
       } else {
         aSh.getRange(1, aSh.getLastColumn() + 1).setValue(bank);
       }
-      colMap = getColMap();
+      colMap = _getColMap(aSh);
     }
 
     // Add missing credit banks: append after last column
@@ -641,11 +638,11 @@ function pushAll(data) {
       if (colMap[bank]) continue;
       const newCol = aSh.getLastColumn() + 1;
       aSh.getRange(1, newCol).setValue(bank);
-      colMap = getColMap();
+      colMap = _getColMap(aSh);
     }
 
     // Final column map
-    colMap = getColMap();
+    colMap = _getColMap(aSh);
     const totalCol = colMap['Общий актив'] || 1;
     const dateCol  = colMap['Дата'] || 2;
 
@@ -680,7 +677,7 @@ function pushAll(data) {
     }
 
     // Recalculate Общий актив for all data rows
-    colMap = getColMap();
+    colMap = _getColMap(aSh);
     const finalLastRow = aSh.getLastRow();
     if (finalLastRow > 1) {
       const allData = aSh.getRange(2, 1, finalLastRow - 1, aSh.getLastColumn()).getValues();
@@ -702,7 +699,7 @@ function pushAll(data) {
     if (incData[r][0]) existInc[String(incData[r][0])] = r+1;
   }
   for (const inc of (data.incomes||[])) {
-    const incDateStr = inc.date instanceof Date ? fmtDate(inc.date) : String(inc.date||'');
+    const incDateStr = inc.date instanceof Date ? cellToDateStr(inc.date) : String(inc.date||'');
     if (!incDateStr) continue;
     const row = [inc.id, incDateStr, inc.source, inc.amount, inc.comment||'', incDateStr.slice(0,7)];
     if (existInc[inc.id]) incSh.getRange(existInc[inc.id],1,1,row.length).setValues([row]);

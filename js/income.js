@@ -2,10 +2,7 @@
 let currentIncomeMonth = null;
 let editingIncomeId = null;
 
-function getIncomeMonthExpenses(y, m){
-  const k = monthKey(y, m);
-  return (DB.incomes||[]).filter(i => i.date.startsWith(k));
-}
+
 
 function renderIncome(){
   if(!currentIncomeMonth){
@@ -16,7 +13,8 @@ function renderIncome(){
   document.getElementById('income-month-label').textContent = MONTHS_RU[m]+' '+y;
   syncIncomeMonthInput();
 
-  const incomes = getIncomeMonthExpenses(y, m);
+  const k = monthKey(y, m);
+  const incomes = (DB.incomes||[]).filter(i => i.date.startsWith(k));
   const totalIncome = incomes.reduce((s,i) => s+i.amount, 0);
   const totalExpenses = getMonthExpenses(y, m).reduce((s,e) => s+e.amount, 0);
   const balance = totalIncome - totalExpenses;
@@ -65,10 +63,6 @@ function syncIncomeMonthInput(){
 }
 
 function changeIncomeMonth(d){
-  if(!currentIncomeMonth){
-    const now = new Date();
-    currentIncomeMonth = {y: now.getFullYear(), m: now.getMonth()};
-  }
   currentIncomeMonth.m += d;
   if(currentIncomeMonth.m > 11){currentIncomeMonth.m = 0; currentIncomeMonth.y++;}
   if(currentIncomeMonth.m < 0){currentIncomeMonth.m = 11; currentIncomeMonth.y--;}

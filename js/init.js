@@ -7,7 +7,7 @@ function init(){
   currentDay=today();
   document.getElementById('fab').style.display='flex';
   document.getElementById('fab').textContent='+';
-  if(typeof renderBudget === 'function') renderBudget();
+  renderBudget();
   // Auto-sync on start if URL configured
   initSyncWidget();
   if(DB.syncUrl){ autoSyncOnStart(); startAutoSync(); }

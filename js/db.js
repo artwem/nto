@@ -139,19 +139,12 @@ function getLimits(y,m){
   const keys = Object.keys(DB.limits).sort();
   const prior = keys.filter(k2=>k2<=k).pop();
   if(prior) return DB.limits[prior];
-  return DB.categories.map(()=>3000);
+  return DB.categories.map((_,i) => DEFAULT_LIMITS[i] || 3000);
 }
 
 function getCatColor(i){
   if(DB.catColors && DB.catColors[i]) return DB.catColors[i];
   return CAT_COLORS[i % CAT_COLORS.length];
-}
-
-// Group = all categories sharing the same color
-function getCatGroup(i){
-  const color = getCatColor(i);
-  const peers = DB.categories.filter((_,j) => j !== i && getCatColor(j) === color);
-  return peers.length > 0 ? color : null; // group identified by color
 }
 
 
@@ -178,8 +171,7 @@ function toast(msg){
 // ─── MODAL HELPERS ──────────────────────────────────────────────────
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
-// Close on backdrop click
-// Overlay click-outside handler — runs after full DOM load
+// Close on backdrop click — runs after full DOM load
 function initOverlays(){
   document.querySelectorAll('.overlay').forEach(el=>{
     el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});

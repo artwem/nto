@@ -125,19 +125,19 @@ function makeCatRow(i, spent, lim, totalLimit, inGroup){
 // ─── EXPENSE CRUD ───────────────────────────────────────────────────
 let _addMode = true; // true = add to existing, false = replace
 
-function toggleAddMode(){
-  _addMode = !_addMode;
+const SVG_CHECK = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4L4 7.5L10 1" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function setAddModeVisual(on){
   const vis = document.getElementById('add-mode-visual');
   if(!vis) return;
-  if(_addMode){
-    vis.style.borderColor = 'var(--border2)';
-    vis.style.background = 'var(--card)';
-    vis.innerHTML = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4L4 7.5L10 1" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  } else {
-    vis.style.borderColor = 'var(--border2)';
-    vis.style.background = 'var(--card)';
-    vis.innerHTML = '';
-  }
+  vis.style.borderColor = 'var(--border2)';
+  vis.style.background = 'var(--card)';
+  vis.innerHTML = on ? SVG_CHECK : '';
+}
+
+function toggleAddMode(){
+  _addMode = !_addMode;
+  setAddModeVisual(_addMode);
 }
 
 function updateExpCatHint(){
@@ -152,12 +152,7 @@ function updateExpCatHint(){
     spentEl.textContent = fmt(existing.amount);
     // Reset to add mode when hint appears
     _addMode = true;
-    const vis = document.getElementById('add-mode-visual');
-    if(vis){
-      vis.style.borderColor = 'var(--border2)';
-      vis.style.background = 'var(--card)';
-      vis.innerHTML = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4L4 7.5L10 1" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    }
+    setAddModeVisual(true);
   } else {
     hint.style.display = 'none';
   }
@@ -166,6 +161,7 @@ function updateExpCatHint(){
 function openAddExpense(prefillCat){
   editingExpenseId = null;
   _addMode = true;
+  setAddModeVisual(true);
   document.getElementById('expense-modal-title').textContent='Добавить расход';
   document.getElementById('exp-delete-btn').style.display='none';
   populateCatSelect('exp-cat');
@@ -191,8 +187,7 @@ function editExpense(id, e){
   document.getElementById('exp-comment').value = exp.comment||'';
   // При редактировании — по умолчанию перезаписываем, не добавляем
   _addMode = false;
-  const vis = document.getElementById('add-mode-visual');
-  if(vis){ vis.style.background='var(--card)'; vis.style.borderColor='var(--border2)'; vis.innerHTML=''; }
+  setAddModeVisual(false);
   openModal('modal-expense');
   setTimeout(updateExpCatHint, 50);
 }
