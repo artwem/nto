@@ -1022,13 +1022,15 @@ function updateExpCatHint(){
   const spentEl = document.getElementById('exp-cat-spent');
   if(isNaN(cat) || !hint) return;
   const existing = DB.expenses.find(e => e.cat===cat && e.date===date && !e._deleted);
-  // Show hint only when there's a DIFFERENT record (not the one currently being edited)
-  const isOther = existing && existing.id !== editingExpenseId;
-  if(isOther && existing.amount > 0){
+  if(existing && existing.amount > 0){
     hint.style.display = 'block';
     spentEl.textContent = fmt(existing.amount);
-    _addMode = true;
-    setAddModeVisual(true);
+    // When adding new: default to add mode
+    // When editing the same record: keep _addMode as-is (set by editExpense)
+    if(!editingExpenseId || existing.id !== editingExpenseId){
+      _addMode = true;
+      setAddModeVisual(true);
+    }
   } else {
     hint.style.display = 'none';
   }
