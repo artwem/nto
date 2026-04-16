@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"cat-row\\\\|openAddExpense\\\\|getCatColor\\\\|getCatSpent\" /c/Users/aanisimov/code/nto/js/*.js)",
+      "Bash(node *)"
+    ]
+  }
+}
