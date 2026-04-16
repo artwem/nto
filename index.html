@@ -23,6 +23,21 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    // Когда найден новый SW — ждём активации и перезагружаем страницу
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      sw.addEventListener('statechange', function() {
+        if (this.state === 'activated') location.reload();
+      });
+    });
+  });
+  // SW взял управление (skipWaiting + clients.claim) — перезагружаем
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+}
+</script>
 </head>
 <body>
 
