@@ -93,10 +93,17 @@ async function pullFromSheets(){
   try {
     const d = await syncRequest('pull');
     if(d.error){ setSyncStatus('error'); toast('Ошибка: '+d.error); return; }
+    const conflictMonths = _findConflictMonths(d.limits);
+    if(conflictMonths.length){
+      _pendingPullData = d;
+      _showConflictModal(conflictMonths);
+      setSyncStatus('error');
+      return;
+    }
     mergePullData(d);
+    DB._lastSyncedLimits = JSON.parse(JSON.stringify(DB.limits));
     DB._dirty = false;
     localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
-    // Re-render whatever page is currently open
     if(currentPage==='budget') renderBudget();
     else if(currentPage==='day') renderDay();
     else if(currentPage==='stats') renderStats();
@@ -210,32 +217,100 @@ function saveSyncInterval(val){
 }
 
 let _syncInFlight = false;
+let _pendingPullData = null;
 
-function startAutoSync(){
-  if(!DB.syncUrl || _autoSyncTimer) return;
-  const ms = getSyncInterval() * 1000;
-  _autoSyncTimer = setInterval(async () => {
-    if(!DB.syncUrl || document.hidden) return;
-    if(!DB._dirty) return;
-    if(_syncInFlight) return; // previous push still running — skip
-    _syncInFlight = true;
-    try {
-      const data = buildPayload();
-      const d = await syncRequest('push', data);
-      if(d && !d.error){
-        DB._dirty = false;
+function _findConflictMonths(sheetLimits){
+  const base  = DB._lastSyncedLimits || {};
+  const local = DB.limits || {};
+  const sheet = sheetLimits || {};
+  if(!Object.keys(base).length) return [];
+  const conflicts = [];
+  const keys = new Set([...Object.keys(local), ...Object.keys(sheet)]);
+  for(const k of keys){
+    const baseArr  = base[k]  || [];
+    const localArr = local[k] || [];
+    const sheetArr = sheet[k] || [];
+    const len = Math.max(localArr.length, sheetArr.length, baseArr.length);
+    let localDiff = false, sheetDiff = false;
+    for(let i = 0; i < len; i++){
+      if((localArr[i]||0) !== (baseArr[i]||0)) localDiff = true;
+      if((sheetArr[i]||0) !== (baseArr[i]||0)) sheetDiff = true;
+    }
+    if(localDiff && sheetDiff) conflicts.push(k);
+  }
+  return conflicts;
+}
+
+function _showConflictModal(months){
+  const el = document.getElementById('sync-conflict-months');
+  if(el) el.textContent = months.map(k => {
+    const [y, m] = k.split('-');
+    return (MONTHS_RU[parseInt(m)-1] || k) + ' ' + y;
+  }).join(', ');
+  openModal('modal-sync-conflict');
+}
+
+async function resolveConflict(choice){
+  closeModal('modal-sync-conflict');
+  const d = _pendingPullData;
+  _pendingPullData = null;
+  if(!d) return;
+  setSyncStatus('syncing');
+  try{
+    if(choice === 'sheet'){
+      DB.limits = JSON.parse(JSON.stringify(d.limits || {}));
+      mergePullData({...d, limits: undefined});
+    } else {
+      const p = await syncRequest('push', buildPayload());
+      if(p && !p.error){
         DB.catRenames = [];
         DB.bankRenames = [];
         DB.bankDeletions = [];
         DB.expenses = DB.expenses.filter(e => !e._deleted);
-        const ts = new Date().toISOString();
-        localStorage.setItem('lastSync', ts);
-        sessionStorage.setItem('lastSync', ts);
-        localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
-        setSyncStatus('ok', ts);
       }
-    } catch(e) {}
-    _syncInFlight = false;
+      mergePullData({...d, limits: undefined});
+    }
+    DB._lastSyncedLimits = JSON.parse(JSON.stringify(DB.limits));
+    DB._dirty = false;
+    localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
+    renderBudget();
+    const ts = new Date().toISOString();
+    localStorage.setItem('lastSync', ts);
+    sessionStorage.setItem('lastSync', ts);
+    setSyncStatus('ok', ts);
+    toast(choice === 'sheet' ? '✓ Загружено из таблицы' : '✓ Ваши данные сохранены');
+  } catch(e){ setSyncStatus('error'); toast('Ошибка: ' + e.message); }
+}
+
+async function _doPush(){
+  if(!DB.syncUrl || !DB._dirty || _syncInFlight) return;
+  _syncInFlight = true;
+  try {
+    const d = await syncRequest('push', buildPayload());
+    if(d && !d.error){
+      DB._dirty = false;
+      DB.catRenames = [];
+      DB.bankRenames = [];
+      DB.bankDeletions = [];
+      DB.expenses = DB.expenses.filter(e => !e._deleted);
+      DB._lastSyncedLimits = JSON.parse(JSON.stringify(DB.limits));
+      const ts = new Date().toISOString();
+      localStorage.setItem('lastSync', ts);
+      sessionStorage.setItem('lastSync', ts);
+      localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
+      setSyncStatus('ok', ts);
+    }
+  } catch(e) {}
+  _syncInFlight = false;
+}
+
+function startAutoSync(){
+  if(!DB.syncUrl || _autoSyncTimer) return;
+  window.addEventListener('online', _doPush);
+  const ms = getSyncInterval() * 1000;
+  _autoSyncTimer = setInterval(() => {
+    if(!DB.syncUrl || document.hidden) return;
+    _doPush();
   }, ms);
 }
 

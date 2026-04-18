@@ -32,7 +32,9 @@ let DB = {
   banks: [],
   creditBanks: [],
   limits: {},  // key: "YYYY-MM", value: array of limits per category
-  syncUrl: ''
+  syncUrl: '',
+  goals: [],
+  _lastSyncedLimits: {}
 };
 
 let currentMonth = {y:0,m:0};
@@ -43,7 +45,7 @@ let charts = {};
 function loadDB(){
   const saved = localStorage.getItem('budgetDB_v2');
   if(saved){
-    try{const d=JSON.parse(saved);Object.assign(DB,d);}catch(e){}
+    try{const d=JSON.parse(saved);Object.assign(DB,d);}catch(e){console.error('loadDB: failed to parse saved data',e);}
   } else {
     const expenses = localStorage.getItem('expenses');
     if(expenses) DB.expenses = JSON.parse(expenses);
@@ -128,6 +130,7 @@ function fmtShort(n){
   return Math.round(n)+'';
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function today(){
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');

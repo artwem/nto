@@ -283,7 +283,7 @@ function renderCatExpensesList(catIdx, y, m) {
         <div class="exp-list-date">${dy}.${mo}</div>
         <div class="exp-list-body">
           <div class="exp-list-amount">${fmt(e.amount)}</div>
-          ${e.comment ? `<div class="exp-list-comment">${e.comment}</div>` : ''}
+          ${e.comment ? `<div class="exp-list-comment">${esc(e.comment)}</div>` : ''}
         </div>
         <button class="exp-list-edit" onclick="editExpenseFromCat('${e.id}')">Изм.</button>
       </div>

@@ -23,43 +23,69 @@ python3 -m http.server 8080
 
 **Deployment**: Push to `main` for GitHub Pages. Or run `./build.sh` and drop `dist/` on Netlify.
 
+## Critical: Two-File Reality
+
+**`index.html` is the authoritative source for dev mode.** The `js/*.js` files are only used by `build.sh` to bundle a production `dist/index.html`. Changes to `js/*.js` have **zero effect** during development — all logic must be edited directly inside `index.html`.
+
+Each JS module is inlined in `index.html` with a section marker comment:
+```
+// ═══ budget.js ═══
+// ═══ day.js ═══
+// ═══ assets.js ═══
+// ═══ settings.js ═══
+// ═══ sync.js ═══
+```
+
+Similarly, `nav.html`, `pages.html`, and `modals.html` are partial HTML fragments — they're only used by `build.sh`. The nav/pages/modals content must be edited directly in `index.html`.
+
 ## Architecture
 
-### Data Layer — `js/db.js`
+### Data Layer — `js/db.js` (inlined in `index.html`)
 
 Single global `DB` object persisted to `localStorage` under `budgetDB_v2`. Every module reads from and writes to `DB`, then calls `saveDB()`. Schema:
 
 ```javascript
 {
-  categories: ['ЖКУ + аренда', ...],   // ordered list
-  expenses:   [{id, date, cat, sum, comment, _deleted?}, ...],
-  incomes:    [{date, source, sum}, ...],
-  assets:     [{date, bankName, sum, _deleted?}, ...],
-  banks:      ['Сбербанк', ...],
-  creditBanks: [...],
-  limits:     {'2026-04': [15000, ...]}, // per-category monthly limits
-  catColors:  {0: '#185fa5', ...},       // category index → hex color
-  syncUrl:    'https://script.google.com/...',
-  _dirty:     true/false
+  categories:  ['ЖКУ + аренда', ...],    // ordered list
+  catColors:   {0: '#185fa5', ...},       // category index → hex color
+  expenses:    [{id, date, cat, amount, comment, _deleted?}, ...],
+  incomes:     [{date, source, amount}, ...],
+  assets:      [{date, bankName, amount, _deleted?}, ...],
+  banks:       ['Сбербанк', ...],         // debit bank names
+  creditBanks: [...],                     // credit bank names (subtracted from net worth)
+  limits:      {'2026-04': [15000, ...]}, // per-category monthly limits, keyed by monthKey()
+  syncUrl:     'https://script.google.com/...',
+  goals:       [{id, name, target, saved, deadline, color}, ...],
+  notifsEnabled: false,
+  notifThreshold: 90,                     // % of limit that triggers push notification
+  _lastSyncedLimits: {},                  // baseline for 3-way merge conflict detection
+  _dirty:      true/false
 }
 ```
 
-### Tab Modules — `js/*.js`
+`getLimits(y, m)` — returns limits for a month, falling back to most recent prior month's limits (not defaults).
 
-Each tab has a corresponding module with a `render*()` function called after any data change:
+### Tab Modules
 
-| Tab | File | Responsibility |
-|-----|------|----------------|
-| Budget | `budget.js` | Categories grouped by color, limits, progress bars |
-| Day | `day.js` | Daily expense list |
-| Income | `income.js` | Income sources, monthly balance |
-| Stats | `stats.js` | Chart.js graphs (6-month trends, category breakdown) |
-| Assets | `assets.js` | Bank accounts, credit cards, savings chart |
-| Settings | `settings.js` | Category/bank CRUD, sync URL config |
+Each tab has a `render*()` function called after any data change:
+
+| Tab | Section marker | Responsibility |
+|-----|----------------|----------------|
+| Budget | `═══ budget.js ═══` | Categories grouped by color, limits, progress bars |
+| Day | `═══ day.js ═══` | Daily expense list |
+| Income | `═══ income.js ═══` | Income sources, monthly balance |
+| Stats | `═══ stats.js ═══` | Chart.js graphs (6-month trends, category breakdown) |
+| Assets | `═══ assets.js ═══` | Bank accounts, credit cards, savings chart, goals |
+| Forecast | `═══ calc.js ═══` | Compound interest / savings forecast calculator |
+| Settings | `═══ settings.js ═══` | Category/bank CRUD, sync, backup/restore, notifications |
 
 ### Sync — `js/sync.js` + `apps-script/Code.gs`
 
-Optional 2-way sync with Google Sheets via a deployed Google Apps Script URL stored in `DB.syncUrl`. Auto-syncs every 15 seconds when configured. The Apps Script creates/updates sheets named "По дням YYYY", month names in Russian, "Активы", "Доходы", etc. To update sync logic, edit `Code.gs` in the Google Apps Script editor, then paste back.
+Optional 2-way sync with Google Sheets via a deployed Google Apps Script URL in `DB.syncUrl`. Auto-syncs every 15 seconds. On startup: push local data first, then pull from sheet. Uses `DB._lastSyncedLimits` as a baseline for 3-way merge conflict detection on limits — if both local and sheet diverged from the baseline, a conflict modal is shown.
+
+The Apps Script (`Code.gs`) creates/updates sheets named "По дням YYYY", Russian month names, "Активы", "Доходы". When reading limits from the sheet, per-month sheets take precedence over the Шаблон (template) sheet.
+
+To update server-side sync logic: edit `Code.gs` in the Google Apps Script editor, then paste back here.
 
 ### PWA Caching — `sw.js`
 
@@ -67,13 +93,16 @@ Cache-first for assets, network-first for HTML. The `V` timestamp at the top of 
 
 ### Key Globals
 
-- `saveDB()` — persist to localStorage
-- `renderBudget()`, `renderDay()`, `renderStats()`, etc. — full tab re-render
-- `fmt(n)` — format as ₽ currency
-- `today()` — returns `YYYY-MM-DD`
-- `monthKey(y, m)` — returns `YYYY-MM` key used in `limits`
-- `getCatColor(idx)`, `getCatSpent(idx, y, m)` — query helpers
-
-### HTML Structure
-
-`index.html` is the app shell (~3000 lines). `pages.html`, `modals.html`, and `nav.html` are partial HTML files that `build.sh` inlines into the bundle. The bottom navigation bar maps to the 5 tabs.
+- `saveDB()` — persist to localStorage; sets `DB._dirty = true`
+- `renderBudget()`, `renderDay()`, `renderAssets()`, `renderSettings()`, etc. — full tab re-render
+- `fmt(n)` — format as `12 345₽`
+- `fmtShort(n)` — compact: `12к`, `1.2М`
+- `esc(s)` — HTML-escape (always use for user-supplied strings in innerHTML)
+- `today()` — `YYYY-MM-DD`
+- `monthKey(y, m)` — `YYYY-MM` key used in `limits`
+- `getCatColor(idx)` — hex color for category (from `DB.catColors` or `CAT_COLORS` palette)
+- `getCatSpent(idx, y, m)` — sum of non-deleted expenses for category in month
+- `openModal(id)` / `closeModal(id)` — show/hide `.overlay` modals
+- `toast(msg)` — 2.2s bottom toast
+- `uid()` — generates short alphanumeric ID
+- `checkBudgetNotifications()` — call after saving an expense to fire push notifications

@@ -20,10 +20,31 @@ async function autoSyncOnStart(){
   _syncInProgress = true;
   setSyncStatus('syncing');
   try{
+    // Pull first so we can detect conflicts before overwriting sheet data
     const d = await syncRequest('pull', null);
-    if(d.error){ setSyncStatus('error'); _syncInProgress = false; return; }
+    if(d.error){ setSyncStatus('error'); return; }
+
+    const conflictMonths = _findConflictMonths(d.limits);
+    if(conflictMonths.length){
+      _pendingPullData = d;
+      _showConflictModal(conflictMonths);
+      setSyncStatus('error');
+      return;
+    }
+
+    // No conflict: 3-way merge, then push local changes (new expenses etc.)
     mergePullData(d);
-    // Save quietly — don't mark dirty (pull data shouldn't trigger push)
+    if(DB._dirty){
+      const p = await syncRequest('push', buildPayload());
+      if(p && !p.error){
+        DB._dirty = false;
+        DB.catRenames = [];
+        DB.bankRenames = [];
+        DB.bankDeletions = [];
+        DB.expenses = DB.expenses.filter(e => !e._deleted);
+      }
+    }
+    DB._lastSyncedLimits = JSON.parse(JSON.stringify(DB.limits));
     DB._dirty = false;
     localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
     renderBudget();
@@ -31,8 +52,8 @@ async function autoSyncOnStart(){
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
-  } catch(e){ setSyncStatus('error'); _syncInProgress = false; return; }
-  _syncInProgress = false;
+  } catch(e){ setSyncStatus('error'); }
+  finally{ _syncInProgress = false; }
 }
 
 function normDate(d) {
@@ -72,10 +93,27 @@ function buildPayload(){
   };
 }
 
+function _mergeLimits(sheetLimits){
+  const base = DB._lastSyncedLimits || {};
+  Object.entries(sheetLimits).forEach(([k, sheetArr]) => {
+    const localArr = DB.limits[k] || [];
+    const baseArr  = base[k]  || [];
+    const len = Math.max(localArr.length, sheetArr.length, baseArr.length);
+    let localDiff = false, sheetDiff = false;
+    for(let i = 0; i < len; i++){
+      if((localArr[i]||0) !== (baseArr[i]||0)) localDiff = true;
+      if((sheetArr[i]||0) !== (baseArr[i]||0)) sheetDiff = true;
+    }
+    // Sheet wins only when sheet changed and local didn't
+    if(sheetDiff && !localDiff) DB.limits[k] = sheetArr;
+    else if(!DB.limits[k])      DB.limits[k] = sheetArr; // new month key
+  });
+}
+
 function mergePullData(d){
   if(d.categories && d.categories.length) DB.categories = d.categories;
   if(d.catColors !== undefined) DB.catColors = d.catColors;
-  if(d.limits) Object.assign(DB.limits, d.limits);
+  if(d.limits) _mergeLimits(d.limits);
 
   // Merge expenses:
   // - Sheet entries (gs_*) always replace — sheet is source of truth

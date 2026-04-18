@@ -39,8 +39,8 @@ function renderIncome(){
     row.style.cursor = 'pointer';
     row.innerHTML = `
       <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:500">${inc.source}</div>
-        <div style="font-size:11px;color:var(--muted)">${inc.date}${inc.comment ? ' · '+inc.comment : ''}</div>
+        <div style="font-size:14px;font-weight:500">${esc(inc.source)}</div>
+        <div style="font-size:11px;color:var(--muted)">${esc(inc.date)}${inc.comment ? ' · '+esc(inc.comment) : ''}</div>
       </div>
       <span style="font-size:15px;font-weight:600;color:var(--green);flex-shrink:0">+${fmt(inc.amount)}</span>
       <button style="padding:4px 8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;flex-shrink:0" onclick="editIncome('${inc.id}',event)">✎</button>

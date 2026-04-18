@@ -181,6 +181,8 @@ if ('serviceWorker' in navigator) {
   </div>
   <div class="sec-hdr"><span class="sec-title">Текущие счета</span><span class="sec-action" onclick="openBankManager()">Управлять</span></div>
   <div class="settings-list" id="assets-list"></div>
+  <div class="sec-hdr" style="margin-top:8px"><span class="sec-title">Цели накоплений</span><span class="sec-action" onclick="openGoalModal()">+ Добавить</span></div>
+  <div id="goals-list" style="padding:0 16px 8px"></div>
   <div class="page-end"></div>
 </div>
 
@@ -317,10 +319,41 @@ if ('serviceWorker' in navigator) {
   <div class="spacer"></div>
   <div class="sec-hdr"><span class="sec-title">Данные</span></div>
   <div class="settings-list">
+    <div class="setting-row" onclick="backupDB()">
+      <span class="setting-label">💾 Скачать резервную копию</span>
+      <span class="setting-chevron">›</span>
+    </div>
+    <div class="setting-row" onclick="document.getElementById('restore-input').click()">
+      <span class="setting-label">📂 Восстановить из файла</span>
+      <span class="setting-chevron">›</span>
+    </div>
+    <input type="file" id="restore-input" accept=".json" style="display:none" onchange="restoreDB(this)">
     <div class="setting-row" onclick="exportCSV()">
       <span class="setting-label">📥 Экспорт CSV</span>
       <span class="setting-chevron">›</span>
     </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="sec-hdr"><span class="sec-title">Уведомления</span></div>
+  <div class="settings-list">
+    <div class="setting-row" style="cursor:default">
+      <span class="setting-label">Превышение лимита</span>
+      <div id="notif-toggle-wrap">
+        <button id="notif-toggle-btn" onclick="toggleNotifications()" style="padding:4px 14px;font-size:13px;border-radius:20px;border:0.5px solid var(--border2);background:var(--card);color:var(--muted);cursor:pointer;font-family:inherit" id="notif-toggle-btn"></button>
+      </div>
+    </div>
+    <div class="setting-row" style="cursor:default" id="notif-threshold-row">
+      <span class="setting-label" style="color:var(--muted)">Порог уведомления</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="number" id="notif-threshold" min="50" max="100" value="90"
+          style="width:52px;text-align:center;padding:4px 6px;font-size:13px;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--card);color:var(--text)"
+          onchange="saveNotifThreshold(this.value)"/>
+        <span style="font-size:13px;color:var(--muted)">%</span>
+      </div>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="settings-list">
     <div class="setting-row" onclick="openModal('modal-about')">
       <span class="setting-label">ℹ О приложении</span>
       <span class="setting-chevron">›</span>
@@ -337,31 +370,31 @@ if ('serviceWorker' in navigator) {
 ═══════════════════════════════════════════════════════════════ -->
 <nav class="nav">
   <button class="nav-btn active" onclick="showPage('budget',this)" id="nav-budget">
-    <svg viewBox="0 0 22 22" fill="none"><rect x="2" y="11" width="4" height="9" rx="1.5" fill="currentColor" opacity=".4"/><rect x="9" y="6" width="4" height="14" rx="1.5" fill="currentColor" opacity=".7"/><rect x="16" y="2" width="4" height="18" rx="1.5" fill="currentColor"/></svg>
+    <svg viewBox="0 0 22 22" fill="none"><path d="M2 19h18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="3" y="10" width="4" height="8" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="6" width="4" height="12" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="15" y="13" width="4" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
     Бюджет
   </button>
   <button class="nav-btn" onclick="showPage('day',this)" id="nav-day">
-    <svg viewBox="0 0 22 22" fill="none"><rect x="3" y="3" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M7 1v3M15 1v3M3 8h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="13" r="1.2" fill="currentColor"/><circle cx="11" cy="13" r="1.2" fill="currentColor"/><circle cx="14" cy="13" r="1.2" fill="currentColor"/></svg>
+    <svg viewBox="0 0 22 22" fill="none"><rect x="3" y="5" width="16" height="14" rx="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 3v4M15 3v4M3 10h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="7" y="13" width="3" height="3" rx="0.8" fill="currentColor"/></svg>
     День
   </button>
   <button class="nav-btn" onclick="showPage('income',this)" id="nav-income">
-    <svg viewBox="0 0 22 22" fill="none"><path d="M11 3v16M6 8l5-5 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 18h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <svg viewBox="0 0 22 22" fill="none"><path d="M7 16V6M4 9l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 6v10M12 13l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     Доходы
   </button>
   <button class="nav-btn" onclick="showPage('stats',this)" id="nav-stats">
-    <svg viewBox="0 0 22 22" fill="none"><path d="M2 16L7 10l4 3 5-7 4 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+    <svg viewBox="0 0 22 22" fill="none"><path d="M2 17C5 17 5 8 9 8s5 7 11 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9" cy="8" r="2" fill="currentColor"/><circle cx="16" cy="11" r="2" fill="currentColor"/></svg>
     Графики
   </button>
   <button class="nav-btn" onclick="showPage('assets',this)" id="nav-assets">
-    <svg viewBox="0 0 22 22" fill="none"><rect x="2" y="13" width="18" height="7" rx="2.5" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="2" y="2" width="18" height="7" rx="2.5" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="17" cy="5.5" r="1.5" fill="currentColor"/><circle cx="17" cy="16.5" r="1.5" fill="currentColor"/></svg>
+    <svg viewBox="0 0 22 22" fill="none"><path d="M4 8V7a3 3 0 013-3h10a3 3 0 013 3v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="2" y="8" width="18" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="13.5" r="1.5" fill="currentColor"/></svg>
     Активы
   </button>
   <button class="nav-btn" onclick="showPage('calc',this)" id="nav-calc">
-    <svg viewBox="0 0 22 22" fill="none"><rect x="3" y="3" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M7 8h8M7 11h5M7 14h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="16" cy="14" r="2" fill="currentColor" opacity=".7"/></svg>
-    Calc
+    <svg viewBox="0 0 22 22" fill="none"><path d="M2 17L7 11l4 3 5-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M15.5 7.5l3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+    Прогноз
   </button>
   <button class="nav-btn" onclick="showPage('settings',this)" id="nav-settings">
-    <svg viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M11 2v2m0 14v2M2 11h2m14 0h2m-3.05-6.95-1.41 1.41M4.46 17.54l1.41-1.41M4.46 4.46l1.41 1.41m11.67 11.67-1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <svg viewBox="0 0 22 22" fill="none"><path d="M3 6h2.5M9.5 6h9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 11h10.5M17.5 11h1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 16h5.5M12.5 16h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="6" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="11" r="2" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="16" r="2" stroke="currentColor" stroke-width="1.5"/></svg>
     Настройки
   </button>
 </nav>
@@ -454,6 +487,38 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <!-- MODAL: ADD ASSET -->
+<!-- MODAL: GOAL -->
+<div class="overlay" id="modal-goal">
+  <div class="sheet" style="position:relative">
+    <button class="close-btn" onclick="closeModal('modal-goal')">✕</button>
+    <h2 id="goal-modal-title" style="margin-bottom:16px">Новая цель</h2>
+    <div class="fgrp">
+      <label class="flbl">Название</label>
+      <input type="text" id="goal-name" class="finp" placeholder="Отпуск, машина, ремонт…">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">Целевая сумма, ₽</label>
+      <input type="number" id="goal-target" class="finp" inputmode="decimal" placeholder="100 000">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">Уже накоплено, ₽</label>
+      <input type="number" id="goal-saved" class="finp" inputmode="decimal" placeholder="0">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">Срок (необязательно)</label>
+      <input type="month" id="goal-deadline" class="finp">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">Цвет</label>
+      <div id="goal-color-picker" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:4px"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn danger" id="goal-delete-btn" onclick="deleteGoal()" style="display:none">Удалить</button>
+      <button class="btn primary" onclick="saveGoal()" style="flex:1">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="modal-asset">
   <div class="sheet" style="position:relative">
     <button class="close-btn" onclick="closeModal('modal-asset')">✕</button>
@@ -571,6 +636,32 @@ if ('serviceWorker' in navigator) {
 
     <div style="height:8px"></div>
     <button class="btn" onclick="closeModal('modal-sync-choice')" style="width:100%">Закрыть</button>
+  </div>
+</div>
+
+<!-- MODAL: SYNC CONFLICT -->
+<div class="overlay" id="modal-sync-conflict">
+  <div class="sheet" style="position:relative">
+    <button class="close-btn" onclick="closeModal('modal-sync-conflict')">✕</button>
+    <h2 style="margin-bottom:6px">Конфликт данных</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:4px;line-height:1.5">Лимиты изменились и в приложении, и в таблице:</p>
+    <p id="sync-conflict-months" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:20px"></p>
+    <button onclick="resolveConflict('local')" style="width:100%;padding:14px 16px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--card);cursor:pointer;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:14px;font-family:inherit">
+      <span style="font-size:24px;flex-shrink:0">📱</span>
+      <span>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">Оставить мои данные</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Лимиты из приложения → Google Sheets</div>
+      </span>
+    </button>
+    <button onclick="resolveConflict('sheet')" style="width:100%;padding:14px 16px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--card);cursor:pointer;text-align:left;margin-bottom:4px;display:flex;align-items:center;gap:14px;font-family:inherit">
+      <span style="font-size:24px;flex-shrink:0">📊</span>
+      <span>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">Загрузить из таблицы</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Лимиты из Google Sheets → приложение</div>
+      </span>
+    </button>
+    <div style="height:8px"></div>
+    <button class="btn" onclick="closeModal('modal-sync-conflict')" style="width:100%">Решить позже</button>
   </div>
 </div>
 
@@ -731,6 +822,8 @@ function loadDB(){
   if(!DB.bankDeletions) DB.bankDeletions = [];
   if(!DB.categories) DB.categories = [];
   if(!DB.limits) DB.limits = {};
+  if(!DB.goals) DB.goals = [];
+  if(!DB.assets) DB.assets = [];
   // First run — no data at all: populate with defaults so app isn't empty
   if(!saved && !DB.categories.length){
     DB.categories = [...DEFAULT_CATS];
@@ -1139,6 +1232,7 @@ function saveExpense(){
   if(currentPage==='day') renderDay();
   else renderBudget();
   toast(editingExpenseId?'Обновлено':'Сохранено');
+  checkBudgetNotifications();
 }
 
 function deleteExpense(){
@@ -1816,14 +1910,16 @@ function renderAssets(){
     });
     data.push(Math.round(total));
   });
-  if(charts.assets) charts.assets.destroy();
-  if(labels.length>0){
-    charts.assets=new Chart(document.getElementById('chartAssets'),{
-      type:'line',
-      data:{labels,datasets:[{data,borderColor:'#185fa5',backgroundColor:'rgba(24,95,165,.08)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#185fa5',borderWidth:2}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>fmt(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888'}},y:{grid:{color:'rgba(128,128,128,.1)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}}}}
-    });
-  }
+  try{
+    if(charts.assets) charts.assets.destroy();
+    if(labels.length>0){
+      charts.assets=new Chart(document.getElementById('chartAssets'),{
+        type:'line',
+        data:{labels,datasets:[{data,borderColor:'#185fa5',backgroundColor:'rgba(24,95,165,.08)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#185fa5',borderWidth:2}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:v=>fmt(v.raw)}}},scales:{x:{grid:{display:false},ticks:{font:{size:9},color:'#888'}},y:{grid:{color:'rgba(128,128,128,.1)'},ticks:{callback:v=>fmtShort(v)+'₽',font:{size:9},color:'#888'}}}}
+      });
+    }
+  }catch(e){ console.error('assets chart:', e); }
 
   // History table
   const wrap = document.getElementById('assets-history-wrap');
@@ -1837,6 +1933,109 @@ function renderAssets(){
   } else if(wrap){
     wrap.style.display = 'none';
   }
+  renderGoals();
+}
+
+// ─── GOALS ──────────────────────────────────────────────────────────
+const GOAL_COLORS = ['#185fa5','#1d9e75','#d85a30','#8e44ad','#d4537e','#ba7517','#7f8c8d'];
+let _editingGoalId = null;
+let _selectedGoalColor = GOAL_COLORS[0];
+
+function renderGoals(){
+  const list = document.getElementById('goals-list');
+  if(!list) return;
+  const goals = DB.goals || [];
+  if(!goals.length){
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:4px 0 8px">Нет целей — нажмите + чтобы добавить</p>';
+    return;
+  }
+  list.innerHTML = goals.map((g, idx) => {
+    const pct = g.target > 0 ? Math.min(100, Math.round(g.saved / g.target * 100)) : 0;
+    const color = g.color || GOAL_COLORS[0];
+    const remaining = Math.max(0, g.target - g.saved);
+    let deadlineStr = '';
+    if(g.deadline){ const [y,m]=g.deadline.split('-'); deadlineStr=(MONTHS_RU[parseInt(m)-1]||'')+' '+y; }
+    const done = g.saved >= g.target;
+    return `<div style="${idx>0?'border-top:1px solid var(--border);':''}padding:12px 0;cursor:pointer" onclick="openGoalModal('${esc(g.id)}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:14px;font-weight:600">${esc(g.name)}</span>
+        ${deadlineStr?`<span style="font-size:11px;color:var(--muted)">${esc(deadlineStr)}</span>`:''}
+      </div>
+      <div style="background:var(--border2);border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;font-weight:600;color:${color}">${fmt(g.saved)}</span>
+        ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Цель достигнута!</span>':`<span style="font-size:12px;color:var(--muted)">из ${fmt(g.target)} · ${pct}%</span>`}
+      </div>
+      ${!done?`<div style="font-size:11px;color:var(--muted);margin-top:2px">Осталось: ${fmt(remaining)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function _getCurrentAssetsTotal(){
+  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const latest = {};
+  (DB.assets||[]).forEach(a => {
+    const name = a.bankName || allBanks[a.bank] || String(a.bank);
+    if(!latest[name] || a.date > latest[name].date) latest[name] = a;
+  });
+  let total = 0;
+  Object.entries(latest).forEach(([name, a]) => {
+    total += (DB.creditBanks||[]).includes(name) ? -a.amount : a.amount;
+  });
+  return Math.max(0, Math.round(total));
+}
+
+function openGoalModal(id){
+  _editingGoalId = id || null;
+  const g = id ? (DB.goals||[]).find(x=>x.id===id) : null;
+  document.getElementById('goal-modal-title').textContent = g ? 'Редактировать цель' : 'Новая цель';
+  document.getElementById('goal-name').value = g ? g.name : '';
+  document.getElementById('goal-target').value = g ? g.target : '';
+  document.getElementById('goal-saved').value = g ? g.saved : _getCurrentAssetsTotal();
+  document.getElementById('goal-deadline').value = g&&g.deadline ? g.deadline : '';
+  document.getElementById('goal-delete-btn').style.display = g ? '' : 'none';
+  _selectedGoalColor = g ? (g.color||GOAL_COLORS[0]) : GOAL_COLORS[0];
+  _renderGoalColorPicker();
+  openModal('modal-goal');
+}
+
+function _renderGoalColorPicker(){
+  const el = document.getElementById('goal-color-picker');
+  if(!el) return;
+  el.innerHTML = GOAL_COLORS.map(c=>
+    `<div onclick="selectGoalColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;box-sizing:border-box;border:2.5px solid ${c===_selectedGoalColor?'var(--text)':c}"></div>`
+  ).join('');
+}
+
+function selectGoalColor(c){ _selectedGoalColor=c; _renderGoalColorPicker(); }
+
+function saveGoal(){
+  const name = document.getElementById('goal-name').value.trim();
+  const target = parseFloat(document.getElementById('goal-target').value)||0;
+  const saved = parseFloat(document.getElementById('goal-saved').value)||0;
+  const deadline = document.getElementById('goal-deadline').value||'';
+  if(!name){ toast('Введите название'); return; }
+  if(target<=0){ toast('Введите целевую сумму'); return; }
+  if(!DB.goals) DB.goals=[];
+  if(_editingGoalId){
+    const idx=DB.goals.findIndex(g=>g.id===_editingGoalId);
+    if(idx>=0) DB.goals[idx]={...DB.goals[idx],name,target,saved,deadline,color:_selectedGoalColor};
+  } else {
+    DB.goals.push({id:uid(),name,target,saved,deadline,color:_selectedGoalColor});
+  }
+  saveDB(); closeModal('modal-goal');
+  if(currentPage==='assets') renderAssets(); else renderGoals();
+  toast('✓ Сохранено');
+}
+
+function deleteGoal(){
+  if(!_editingGoalId) return;
+  DB.goals=(DB.goals||[]).filter(g=>g.id!==_editingGoalId);
+  saveDB(); closeModal('modal-goal');
+  if(currentPage==='assets') renderAssets(); else renderGoals();
+  toast('Цель удалена');
 }
 
 // ─── ASSET CRUD ─────────────────────────────────────────────────────
@@ -2121,6 +2320,7 @@ function renderSettings(){
       {v:'dark', l:'Тёмная'}
     ].map(t=>`<button onclick="setTheme('${t.v}')" style="padding:4px 10px;font-size:12px;border-radius:6px;border:0.5px solid ${cur===t.v?'var(--blue)':'var(--border2)'};background:${cur===t.v?'var(--blue-bg)':'var(--card)'};color:${cur===t.v?'var(--blue)':'var(--muted)'};font-weight:${cur===t.v?'600':'400'};cursor:pointer;font-family:inherit">${t.l}</button>`).join('');
   }
+  renderNotifToggle();
   const lims = getLimits(currentMonth.y, currentMonth.m);
   document.getElementById('cat-settings-list').innerHTML = DB.categories.map((c,i) => `
     <div class="setting-row">
@@ -2429,6 +2629,104 @@ function removeCategory(i){
 }
 
 // ─── EXPORT CSV ─────────────────────────────────────────────────────
+// ─── BACKUP / RESTORE ───────────────────────────────────────────────
+function backupDB(){
+  const json = JSON.stringify(DB, null, 2);
+  const a = document.createElement('a');
+  a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+  a.download = 'budget_backup_' + today() + '.json';
+  a.click();
+  toast('Резервная копия скачана');
+}
+
+function restoreDB(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const d = JSON.parse(e.target.result);
+      if(!d.expenses && !d.categories){
+        toast('Неверный формат файла'); return;
+      }
+      Object.assign(DB, d);
+      saveDB();
+      renderBudget();
+      renderSettings();
+      toast('Данные восстановлены');
+    } catch(err){
+      toast('Ошибка чтения файла');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// ─── NOTIFICATIONS ───────────────────────────────────────────────────
+function renderNotifToggle(){
+  const btn = document.getElementById('notif-toggle-btn');
+  if(!btn) return;
+  const perm = Notification.permission;
+  const enabled = DB.notifsEnabled && perm === 'granted';
+  btn.textContent = enabled ? 'Включены' : 'Выключены';
+  btn.style.borderColor = enabled ? 'var(--green)' : 'var(--border2)';
+  btn.style.background  = enabled ? 'var(--green-bg,#edfaf4)' : 'var(--card)';
+  btn.style.color       = enabled ? 'var(--green)' : 'var(--muted)';
+  const threshRow = document.getElementById('notif-threshold-row');
+  if(threshRow) threshRow.style.display = enabled ? 'flex' : 'none';
+  const threshInput = document.getElementById('notif-threshold');
+  if(threshInput) threshInput.value = DB.notifThreshold || 90;
+}
+
+async function toggleNotifications(){
+  if(DB.notifsEnabled){
+    DB.notifsEnabled = false;
+    saveDB();
+    renderNotifToggle();
+    toast('Уведомления отключены');
+    return;
+  }
+  if(!('Notification' in window)){
+    toast('Браузер не поддерживает уведомления'); return;
+  }
+  const perm = await Notification.requestPermission();
+  if(perm === 'granted'){
+    DB.notifsEnabled = true;
+    saveDB();
+    renderNotifToggle();
+    toast('Уведомления включены');
+  } else {
+    toast('Разрешение не получено — включите в настройках браузера');
+  }
+}
+
+function saveNotifThreshold(val){
+  DB.notifThreshold = Math.min(100, Math.max(50, parseInt(val)||90));
+  saveDB();
+}
+
+function checkBudgetNotifications(){
+  if(!DB.notifsEnabled || Notification.permission !== 'granted') return;
+  const threshold = (DB.notifThreshold || 90) / 100;
+  const {y, m} = currentMonth;
+  const lims = getLimits(y, m);
+  DB.categories.forEach((cat, i) => {
+    const limit = lims[i] || 0;
+    if(!limit) return;
+    const spent = getCatSpent(i, y, m);
+    const ratio = spent / limit;
+    if(ratio >= threshold){
+      const key = 'notif_shown_' + monthKey(y,m) + '_' + i;
+      if(sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+      new Notification('Бюджет: ' + cat, {
+        body: 'Потрачено ' + fmt(spent) + ' из ' + fmt(limit) + ' (' + Math.round(ratio*100) + '%)',
+        icon: '/icons/icon-192.png'
+      });
+    }
+  });
+}
+
 function exportCSV(){
   const rows = [['id','категория','сумма','дата','комментарий']];
   DB.expenses.filter(e => !e._deleted).forEach(e=>{

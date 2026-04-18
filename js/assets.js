@@ -178,6 +178,105 @@ function renderAssets(){
   } else if(wrap){
     wrap.style.display = 'none';
   }
+  renderGoals();
+}
+
+// ─── GOALS ──────────────────────────────────────────────────────────
+const GOAL_COLORS = ['#185fa5','#1d9e75','#d85a30','#8e44ad','#d4537e','#ba7517','#7f8c8d'];
+let _editingGoalId = null;
+let _selectedGoalColor = GOAL_COLORS[0];
+
+function renderGoals(){
+  const list = document.getElementById('goals-list');
+  if(!list) return;
+  const goals = DB.goals || [];
+  if(!goals.length){
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:4px 0 8px">Нет целей — нажмите + чтобы добавить</p>';
+    return;
+  }
+  list.innerHTML = goals.map((g, idx) => {
+    const pct = g.target > 0 ? Math.min(100, Math.round(g.saved / g.target * 100)) : 0;
+    const color = g.color || GOAL_COLORS[0];
+    const remaining = Math.max(0, g.target - g.saved);
+    let deadlineStr = '';
+    if(g.deadline){
+      const [y, m] = g.deadline.split('-');
+      deadlineStr = (MONTHS_RU[parseInt(m)-1] || '') + ' ' + y;
+    }
+    const done = g.saved >= g.target;
+    return `<div style="${idx > 0 ? 'border-top:1px solid var(--border);' : ''}padding:12px 0;cursor:pointer" onclick="openGoalModal('${esc(g.id)}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:14px;font-weight:600">${esc(g.name)}</span>
+        ${deadlineStr ? `<span style="font-size:11px;color:var(--muted)">${esc(deadlineStr)}</span>` : ''}
+      </div>
+      <div style="background:var(--border2);border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width .3s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;font-weight:600;color:${color}">${fmt(g.saved)}</span>
+        ${done
+          ? '<span style="font-size:11px;color:var(--green);font-weight:600">✓ Цель достигнута!</span>'
+          : `<span style="font-size:12px;color:var(--muted)">из ${fmt(g.target)} · ${pct}%</span>`}
+      </div>
+      ${!done ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">Осталось: ${fmt(remaining)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function openGoalModal(id){
+  _editingGoalId = id || null;
+  const g = id ? (DB.goals||[]).find(x => x.id === id) : null;
+  document.getElementById('goal-modal-title').textContent = g ? 'Редактировать цель' : 'Новая цель';
+  document.getElementById('goal-name').value = g ? g.name : '';
+  document.getElementById('goal-target').value = g ? g.target : '';
+  document.getElementById('goal-saved').value = g ? g.saved : 0;
+  document.getElementById('goal-deadline').value = g && g.deadline ? g.deadline : '';
+  document.getElementById('goal-delete-btn').style.display = g ? '' : 'none';
+  _selectedGoalColor = g ? (g.color || GOAL_COLORS[0]) : GOAL_COLORS[0];
+  _renderGoalColorPicker();
+  openModal('modal-goal');
+}
+
+function _renderGoalColorPicker(){
+  const el = document.getElementById('goal-color-picker');
+  if(!el) return;
+  el.innerHTML = GOAL_COLORS.map(c =>
+    `<div onclick="selectGoalColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;box-sizing:border-box;border:2.5px solid ${c===_selectedGoalColor?'var(--text)':c};transition:border-color .15s"></div>`
+  ).join('');
+}
+
+function selectGoalColor(c){
+  _selectedGoalColor = c;
+  _renderGoalColorPicker();
+}
+
+function saveGoal(){
+  const name = document.getElementById('goal-name').value.trim();
+  const target = parseFloat(document.getElementById('goal-target').value) || 0;
+  const saved = parseFloat(document.getElementById('goal-saved').value) || 0;
+  const deadline = document.getElementById('goal-deadline').value || '';
+  if(!name){ toast('Введите название'); return; }
+  if(target <= 0){ toast('Введите целевую сумму'); return; }
+  if(!DB.goals) DB.goals = [];
+  if(_editingGoalId){
+    const idx = DB.goals.findIndex(g => g.id === _editingGoalId);
+    if(idx >= 0) DB.goals[idx] = { ...DB.goals[idx], name, target, saved, deadline, color: _selectedGoalColor };
+  } else {
+    DB.goals.push({ id: uid(), name, target, saved, deadline, color: _selectedGoalColor });
+  }
+  saveDB();
+  closeModal('modal-goal');
+  renderGoals();
+  toast('✓ Сохранено');
+}
+
+function deleteGoal(){
+  if(!_editingGoalId) return;
+  DB.goals = (DB.goals||[]).filter(g => g.id !== _editingGoalId);
+  saveDB();
+  closeModal('modal-goal');
+  renderGoals();
+  toast('Цель удалена');
 }
 
 // ─── ASSET CRUD ─────────────────────────────────────────────────────
@@ -225,7 +324,7 @@ function renderBankManager(){
       : '';
     var t = type, ix = i;
     return '<div class="setting-row" style="cursor:default;gap:6px" id="bank-row-'+t+'-'+ix+'">'
-      + '<span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditBank(&quot;'+t+'&quot;,'+ix+')">'+b+badge+'</span>'
+      + '<span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditBank(&quot;'+t+'&quot;,'+ix+')">'+esc(b)+badge+'</span>'
       + '<button class="btn small icon-btn" onclick="startEditBank(&quot;'+t+'&quot;,'+ix+')" title="Переименовать"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5a1.5 1.5 0 012.1 2.1L5.5 13.1 2 14l.9-3.5L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="9.5" y1="4.5" x2="11.5" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>'
       + '<button class="btn danger small icon-btn" onclick="removeBank(&quot;'+t+'&quot;,'+ix+')"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>'
       + '</div>';

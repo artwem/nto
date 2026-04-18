@@ -331,7 +331,7 @@ function pullAll() {
         if (sd[r][0] && String(sd[r][0])!=='Итого' && typeof sd[r][4]==='number')
           lims[String(sd[r][0])] = sd[r][4];
       }
-      limits[key] = categories.map(c => lims[c]||tmplLims[c]||0);
+      limits[key] = categories.map(c => lims[c] !== undefined ? lims[c] : (tmplLims[c] || 0));
     });
   });
   const now = new Date();

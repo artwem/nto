@@ -29,8 +29,8 @@ function renderDay(){
     row.innerHTML=`
       <div class="entry-dot" style="background:${getCatColor(e.cat)}"></div>
       <div class="entry-info">
-        <div class="entry-cat">${catName}</div>
-        ${e.comment?`<div class="entry-note">${e.comment}</div>`:''}
+        <div class="entry-cat">${esc(catName)}</div>
+        ${e.comment?`<div class="entry-note">${esc(e.comment)}</div>`:''}
       </div>
       <div class="entry-amount">${fmt(e.amount)}</div>
       <button class="entry-del" onclick="editExpense('${e.id}',event)">✎</button>
