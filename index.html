@@ -94,6 +94,7 @@ if ('serviceWorker' in navigator) {
   </div>
   <div class="day-total" id="day-total">0 ₽</div>
   <div class="day-total-lbl">расходы за день</div>
+  <div id="template-chips" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 0"></div>
   <div class="entry-list" id="entry-list"></div>
   <div class="page-end"></div>
 </div>
@@ -334,6 +335,9 @@ if ('serviceWorker' in navigator) {
     </div>
   </div>
   <div class="spacer"></div>
+  <div class="sec-hdr"><span class="sec-title">Шаблоны трат</span><span class="sec-action" onclick="openTemplateModal(null)">+ Добавить</span></div>
+  <div class="settings-list" id="templates-settings-list"></div>
+  <div class="spacer"></div>
   <div class="sec-hdr"><span class="sec-title">Уведомления</span></div>
   <div class="settings-list">
     <div class="setting-row" style="cursor:default">
@@ -456,6 +460,23 @@ if ('serviceWorker' in navigator) {
       <button class="btn danger small" id="exp-delete-btn" onclick="deleteExpense()" style="display:none">Удалить</button>
       <button class="btn" onclick="closeModal('modal-expense')">Отмена</button>
       <button class="btn primary" onclick="saveExpense()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ADD/EDIT TEMPLATE -->
+<div class="overlay" id="modal-template">
+  <div class="sheet" style="position:relative">
+    <button class="close-btn" onclick="closeModal('modal-template')">✕</button>
+    <h2 id="template-modal-title">Новый шаблон</h2>
+    <div class="fgrp"><label class="flbl">Название</label><input type="text" id="tmpl-name" placeholder="Метро, Кофе…"/></div>
+    <div class="fgrp"><label class="flbl">Категория</label><select id="tmpl-cat"></select></div>
+    <div class="fgrp"><label class="flbl">Сумма, ₽</label><input type="number" id="tmpl-amount" placeholder="0" inputmode="decimal"/></div>
+    <div class="fgrp"><label class="flbl">Комментарий</label><input type="text" id="tmpl-comment" placeholder="Необязательно"/></div>
+    <div class="btn-row">
+      <button class="btn danger small" id="tmpl-delete-btn" onclick="deleteTemplate()" style="display:none">Удалить</button>
+      <button class="btn" onclick="closeModal('modal-template')">Отмена</button>
+      <button class="btn primary" onclick="saveTemplate()">Сохранить</button>
     </div>
   </div>
 </div>
@@ -824,6 +845,7 @@ function loadDB(){
   if(!DB.limits) DB.limits = {};
   if(!DB.goals) DB.goals = [];
   if(!DB.assets) DB.assets = [];
+  if(!DB.templates) DB.templates = [];
   // First run — no data at all: populate with defaults so app isn't empty
   if(!saved && !DB.categories.length){
     DB.categories = [...DEFAULT_CATS];
@@ -1356,6 +1378,7 @@ function renderDay(){
   if(calInp) calInp.value = currentDay;
   document.getElementById('day-label').textContent =
     weekdays[d.getDay()]+', '+d.getDate()+' '+SHORT_MONTHS[d.getMonth()]+' '+d.getFullYear();
+  renderTemplateChips();
   const entries = getDayExpenses(currentDay);
   const total = entries.reduce((s,e)=>s+e.amount,0);
   document.getElementById('day-total').textContent = fmt(total);
@@ -1383,6 +1406,112 @@ function renderDay(){
   });
 }
 
+
+// ─── EXPENSE TEMPLATES ──────────────────────────────────────────────
+let _editingTemplateId = null;
+
+function renderTemplateChips(){
+  const wrap = document.getElementById('template-chips');
+  if(!wrap) return;
+  const tmpls = DB.templates||[];
+  if(!tmpls.length){ wrap.style.display='none'; return; }
+  wrap.style.display='flex';
+  wrap.innerHTML = tmpls.map(t => {
+    const color = getCatColor(t.cat);
+    return `<button onclick="addFromTemplate('${t.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;border:1px solid ${color}33;background:${color}15;color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">
+      <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0"></span>
+      ${esc(t.name)} <span style="color:var(--muted);font-size:11px">${fmt(t.amount)}</span>
+    </button>`;
+  }).join('');
+}
+
+function addFromTemplate(id){
+  const t = (DB.templates||[]).find(x=>x.id===id);
+  if(!t) return;
+  const date = currentPage==='day' ? currentDay : today();
+  const existing = DB.expenses.find(e=>e.cat===t.cat&&e.date===date&&!e._deleted);
+  if(existing){
+    existing.amount = Math.round((existing.amount + t.amount)*100)/100;
+    if(t.comment) existing.comment = (existing.comment?existing.comment+'; ':'')+t.comment;
+  } else {
+    DB.expenses.push({id:'gs_'+t.cat+'_'+date.replace(/-/g,''), cat:t.cat, amount:t.amount, date, comment:t.comment||''});
+  }
+  saveDB();
+  if(currentPage==='day') renderDay(); else renderBudget();
+  toast(esc(t.name)+' добавлено');
+  checkBudgetNotifications();
+}
+
+function openTemplateModal(id){
+  _editingTemplateId = id;
+  populateCatSelect('tmpl-cat');
+  if(id){
+    const t = (DB.templates||[]).find(x=>x.id===id);
+    if(!t) return;
+    document.getElementById('template-modal-title').textContent='Изменить шаблон';
+    document.getElementById('tmpl-name').value = t.name;
+    document.getElementById('tmpl-cat').value = t.cat;
+    document.getElementById('tmpl-amount').value = t.amount;
+    document.getElementById('tmpl-comment').value = t.comment||'';
+    document.getElementById('tmpl-delete-btn').style.display='block';
+  } else {
+    document.getElementById('template-modal-title').textContent='Новый шаблон';
+    document.getElementById('tmpl-name').value='';
+    document.getElementById('tmpl-amount').value='';
+    document.getElementById('tmpl-comment').value='';
+    document.getElementById('tmpl-delete-btn').style.display='none';
+  }
+  openModal('modal-template');
+}
+
+function saveTemplate(){
+  const name = document.getElementById('tmpl-name').value.trim();
+  const amt = parseFloat(document.getElementById('tmpl-amount').value);
+  if(!name){toast('Введите название');return;}
+  if(!amt||amt<=0){toast('Введите сумму');return;}
+  const cat = parseInt(document.getElementById('tmpl-cat').value);
+  const comment = document.getElementById('tmpl-comment').value.trim();
+  if(!DB.templates) DB.templates=[];
+  if(_editingTemplateId){
+    const t = DB.templates.find(x=>x.id===_editingTemplateId);
+    if(t){ t.name=name; t.cat=cat; t.amount=amt; t.comment=comment; }
+  } else {
+    DB.templates.push({id:uid(),name,cat,amount:amt,comment});
+  }
+  saveDB();
+  closeModal('modal-template');
+  renderTemplateSettings();
+  toast('Шаблон сохранён');
+}
+
+function deleteTemplate(){
+  if(!_editingTemplateId) return;
+  DB.templates = (DB.templates||[]).filter(x=>x.id!==_editingTemplateId);
+  saveDB();
+  closeModal('modal-template');
+  renderTemplateSettings();
+  toast('Шаблон удалён');
+}
+
+function renderTemplateSettings(){
+  const list = document.getElementById('templates-settings-list');
+  if(!list) return;
+  const tmpls = DB.templates||[];
+  if(!tmpls.length){
+    list.innerHTML='<div style="padding:10px 16px;font-size:13px;color:var(--muted)">Нет шаблонов</div>';
+    return;
+  }
+  list.innerHTML = tmpls.map(t => {
+    const catName = DB.categories[t.cat]||'';
+    return `<div class="setting-row" style="cursor:default">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px">${esc(t.name)}</div>
+        <div style="font-size:11px;color:var(--muted)">${esc(catName)} · ${fmt(t.amount)}</div>
+      </div>
+      <button class="btn small icon-btn" onclick="openTemplateModal('${t.id}')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5a1.5 1.5 0 012.1 2.1L5.5 13.1 2 14l.9-3.5L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="9.5" y1="4.5" x2="11.5" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+    </div>`;
+  }).join('');
+}
 
 // ═══ income.js ═══
 
@@ -1850,10 +1979,12 @@ function renderAssets(){
     if(!byBank[bname]) byBank[bname]={latest:0,date:''};
     if(!byBank[bname].date||a.date>=byBank[bname].date){byBank[bname].latest=a.amount;byBank[bname].date=a.date;}
   });
-  // Total = sum of normal - sum of credit
+  // Latest date across all banks — only show banks updated on this date
+  const latestDate = Object.values(byBank).reduce((max,d)=>d.date>max?d.date:max,'');
+  // Total = sum only banks on latest date (debit - credit)
   let total=0;
   Object.entries(byBank).forEach(([name,data])=>{
-    total += isCredit(name) ? -data.latest : data.latest;
+    if(data.date === latestDate) total += isCredit(name) ? -data.latest : data.latest;
   });
   document.getElementById('total-val').textContent=fmt(total);
   const list=document.getElementById('assets-list');
@@ -1866,6 +1997,8 @@ function renderAssets(){
     allBanksOrdered.forEach(name => {
       const credit = isCredit(name);
       const data = byBank[name] || {latest:0, date:''};
+      // Hide banks with stale data (has old entry but not updated on latest date)
+      if(data.date && latestDate && data.date !== latestDate) return;
       const hasData = !!data.date;
       const row = document.createElement('div');
       row.className = 'asset-row';
@@ -2057,7 +2190,7 @@ function openAssetModal(prefillBankName){
 
 function saveAsset(){
   const amt = parseFloat(document.getElementById('asset-amount').value);
-  if(!amt||amt<=0){toast('Введите сумму');return;}
+  if(isNaN(amt)||amt<0){toast('Введите сумму');return;}
   const bankIdx = parseInt(document.getElementById('asset-bank').value);
   const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
   const bankName = allBanks[bankIdx] || '';
@@ -2322,6 +2455,7 @@ function renderSettings(){
     ].map(t=>`<button onclick="setTheme('${t.v}')" style="padding:4px 10px;font-size:12px;border-radius:6px;border:0.5px solid ${cur===t.v?'var(--blue)':'var(--border2)'};background:${cur===t.v?'var(--blue-bg)':'var(--card)'};color:${cur===t.v?'var(--blue)':'var(--muted)'};font-weight:${cur===t.v?'600':'400'};cursor:pointer;font-family:inherit">${t.l}</button>`).join('');
   }
   renderNotifToggle();
+  renderTemplateSettings();
   const lims = getLimits(currentMonth.y, currentMonth.m);
   document.getElementById('cat-settings-list').innerHTML = DB.categories.map((c,i) => `
     <div class="setting-row">
@@ -2717,14 +2851,29 @@ function checkBudgetNotifications(){
     const spent = getCatSpent(i, y, m);
     const ratio = spent / limit;
     if(ratio >= threshold){
-      const key = 'notif_shown_' + monthKey(y,m) + '_' + i;
-      if(sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, '1');
+      const key = 'notif_fired_' + monthKey(y,m) + '_' + i;
+      const stored = localStorage.getItem(key);
+      // Skip if already notified at this or higher amount
+      if(stored !== null && spent <= parseFloat(stored)) return;
+      localStorage.setItem(key, String(spent));
       new Notification('Бюджет: ' + cat, {
         body: 'Потрачено ' + fmt(spent) + ' из ' + fmt(limit) + ' (' + Math.round(ratio*100) + '%)',
         icon: '/icons/icon-192.png'
       });
     }
+  });
+}
+
+function checkAssetNotification(){
+  if(!DB.notifsEnabled || Notification.permission !== 'granted') return;
+  const day = new Date().getDate();
+  if(day !== 1 && day !== 16) return;
+  const key = 'notif_assets_' + today();
+  if(localStorage.getItem(key)) return;
+  localStorage.setItem(key, '1');
+  new Notification('Обновите активы', {
+    body: 'Сегодня ' + day + '-е — самое время обновить остатки по счетам',
+    icon: '/icons/icon-192.png'
   });
 }
 
@@ -3331,6 +3480,7 @@ function init(){
   document.getElementById('fab').style.display='flex';
   document.getElementById('fab').textContent='+';
   renderBudget();
+  checkAssetNotification();
   // Auto-sync on start if URL configured
   initSyncWidget();
   if(DB.syncUrl){ autoSyncOnStart(); startAutoSync(); }
