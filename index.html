@@ -473,6 +473,7 @@ if ('serviceWorker' in navigator) {
     <div class="fgrp"><label class="flbl">Категория</label><select id="tmpl-cat"></select></div>
     <div class="fgrp"><label class="flbl">Сумма, ₽</label><input type="number" id="tmpl-amount" placeholder="0" inputmode="decimal"/></div>
     <div class="fgrp"><label class="flbl">Комментарий</label><input type="text" id="tmpl-comment" placeholder="Необязательно"/></div>
+    <div class="fgrp"><label class="flbl">Цвет</label><div id="tmpl-color-picker" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:4px"></div></div>
     <div class="btn-row">
       <button class="btn danger small" id="tmpl-delete-btn" onclick="deleteTemplate()" style="display:none">Удалить</button>
       <button class="btn" onclick="closeModal('modal-template')">Отмена</button>
@@ -1409,6 +1410,17 @@ function renderDay(){
 
 // ─── EXPENSE TEMPLATES ──────────────────────────────────────────────
 let _editingTemplateId = null;
+let _selectedTemplateColor = CAT_COLORS[0];
+
+function _renderTemplateColorPicker(){
+  const el = document.getElementById('tmpl-color-picker');
+  if(!el) return;
+  el.innerHTML = CAT_COLORS.map(c=>
+    `<div onclick="selectTemplateColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;box-sizing:border-box;border:2.5px solid ${c===_selectedTemplateColor?'var(--text)':c}"></div>`
+  ).join('');
+}
+
+function selectTemplateColor(c){ _selectedTemplateColor=c; _renderTemplateColorPicker(); }
 
 function renderTemplateChips(){
   const wrap = document.getElementById('template-chips');
@@ -1417,7 +1429,7 @@ function renderTemplateChips(){
   if(!tmpls.length){ wrap.style.display='none'; return; }
   wrap.style.display='flex';
   wrap.innerHTML = tmpls.map(t => {
-    const color = getCatColor(t.cat);
+    const color = t.color || getCatColor(t.cat);
     return `<button onclick="addFromTemplate('${t.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;border:1px solid ${color}33;background:${color}15;color:var(--text);font-size:13px;cursor:pointer;font-family:inherit">
       <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0"></span>
       ${esc(t.name)} <span style="color:var(--muted);font-size:11px">${fmt(t.amount)}</span>
@@ -1454,13 +1466,16 @@ function openTemplateModal(id){
     document.getElementById('tmpl-amount').value = t.amount;
     document.getElementById('tmpl-comment').value = t.comment||'';
     document.getElementById('tmpl-delete-btn').style.display='block';
+    _selectedTemplateColor = t.color || CAT_COLORS[0];
   } else {
     document.getElementById('template-modal-title').textContent='Новый шаблон';
     document.getElementById('tmpl-name').value='';
     document.getElementById('tmpl-amount').value='';
     document.getElementById('tmpl-comment').value='';
     document.getElementById('tmpl-delete-btn').style.display='none';
+    _selectedTemplateColor = CAT_COLORS[0];
   }
+  _renderTemplateColorPicker();
   openModal('modal-template');
 }
 
