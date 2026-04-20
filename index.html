@@ -259,8 +259,19 @@ if ('serviceWorker' in navigator) {
 <div id="page-settings" class="page">
   <div class="hdr"><h1>Настройки</h1></div>
   <div class="spacer"></div>
-  <div class="sec-hdr"><span class="sec-title">Категории</span><span class="sec-action" onclick="openCatManager()">Управлять</span></div>
-  <div class="settings-list" id="cat-settings-list"></div>
+  <div class="sec-hdr"><span class="sec-title">Категории и шаблоны</span></div>
+  <div class="settings-list">
+    <div class="setting-row" onclick="openCatManager()">
+      <span class="setting-label" style="flex:1">Категории расходов</span>
+      <span class="setting-value" id="cat-count-display"></span>
+      <span class="setting-chevron">›</span>
+    </div>
+    <div class="setting-row" onclick="openTemplatesManager()">
+      <span class="setting-label" style="flex:1">Шаблоны трат</span>
+      <span class="setting-value" id="tmpl-count-display"></span>
+      <span class="setting-chevron">›</span>
+    </div>
+  </div>
   <div class="spacer"></div>
   <div class="sec-hdr"><span class="sec-title">Google Sheets синхронизация</span></div>
   <div class="info-box">
@@ -334,9 +345,6 @@ if ('serviceWorker' in navigator) {
       <span class="setting-chevron">›</span>
     </div>
   </div>
-  <div class="spacer"></div>
-  <div class="sec-hdr"><span class="sec-title">Шаблоны трат</span><span class="sec-action" onclick="openTemplateModal(null)">+ Добавить</span></div>
-  <div class="settings-list" id="templates-settings-list"></div>
   <div class="spacer"></div>
   <div class="sec-hdr"><span class="sec-title">Уведомления</span></div>
   <div class="settings-list">
@@ -609,6 +617,19 @@ if ('serviceWorker' in navigator) {
   </div>
 </div>
 
+<!-- MODAL: TEMPLATES MANAGER -->
+<div class="overlay" id="modal-templates">
+  <div class="sheet" style="position:relative">
+    <button class="close-btn" onclick="closeModal('modal-templates')">✕</button>
+    <h2>Шаблоны трат</h2>
+    <div id="templates-settings-list"></div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn" onclick="openTemplateModal(null)">+ Добавить</button>
+      <button class="btn primary" onclick="closeModal('modal-templates')">Готово</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: SCRIPT VIEWER -->
 <div class="overlay" id="modal-script">
   <div class="sheet" style="position:relative">
@@ -719,7 +740,7 @@ if ('serviceWorker' in navigator) {
       <div>
         <div style="font-size:20px;font-weight:600;letter-spacing:2px;color:var(--text)">V.O.I.D.</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">Visual Overview of Income &amp; Debt</div>
-        <div style="font-size:11px;color:var(--hint);margin-top:2px">v1.1.0</div>
+        <div style="font-size:11px;color:var(--hint);margin-top:2px">v1.1.2</div>
       </div>
     </div>
     <p style="font-size:14px;color:var(--muted);line-height:1.6;font-style:italic;margin-bottom:12px">Личный финансовый трекер для тех, кто хочет видеть куда уходят деньги.</p>
@@ -1489,13 +1510,14 @@ function saveTemplate(){
   if(!DB.templates) DB.templates=[];
   if(_editingTemplateId){
     const t = DB.templates.find(x=>x.id===_editingTemplateId);
-    if(t){ t.name=name; t.cat=cat; t.amount=amt; t.comment=comment; }
+    if(t){ t.name=name; t.cat=cat; t.amount=amt; t.comment=comment; t.color=_selectedTemplateColor; }
   } else {
-    DB.templates.push({id:uid(),name,cat,amount:amt,comment});
+    DB.templates.push({id:uid(),name,cat,amount:amt,comment,color:_selectedTemplateColor});
   }
   saveDB();
   closeModal('modal-template');
   renderTemplateSettings();
+  renderSettings();
   toast('Шаблон сохранён');
 }
 
@@ -1505,6 +1527,7 @@ function deleteTemplate(){
   saveDB();
   closeModal('modal-template');
   renderTemplateSettings();
+  renderSettings();
   toast('Шаблон удалён');
 }
 
@@ -1518,7 +1541,9 @@ function renderTemplateSettings(){
   }
   list.innerHTML = tmpls.map(t => {
     const catName = DB.categories[t.cat]||'';
+    const color = t.color || getCatColor(t.cat);
     return `<div class="setting-row" style="cursor:default">
+      <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;margin-right:4px"></span>
       <div style="flex:1;min-width:0">
         <div style="font-size:14px">${esc(t.name)}</div>
         <div style="font-size:11px;color:var(--muted)">${esc(catName)} · ${fmt(t.amount)}</div>
@@ -2470,23 +2495,21 @@ function renderSettings(){
     ].map(t=>`<button onclick="setTheme('${t.v}')" style="padding:4px 10px;font-size:12px;border-radius:6px;border:0.5px solid ${cur===t.v?'var(--blue)':'var(--border2)'};background:${cur===t.v?'var(--blue-bg)':'var(--card)'};color:${cur===t.v?'var(--blue)':'var(--muted)'};font-weight:${cur===t.v?'600':'400'};cursor:pointer;font-family:inherit">${t.l}</button>`).join('');
   }
   renderNotifToggle();
-  renderTemplateSettings();
-  const lims = getLimits(currentMonth.y, currentMonth.m);
-  document.getElementById('cat-settings-list').innerHTML = DB.categories.map((c,i) => `
-    <div class="setting-row">
-      <div style="display:flex;align-items:center;gap:8px;flex:1">
-        <div style="width:10px;height:10px;border-radius:50%;background:${getCatColor(i)};flex-shrink:0"></div>
-        <span class="setting-label">${c}</span>
-      </div>
-      <span class="setting-value">${fmt(lims[i]||0)} / мес</span>
-    </div>
-  `).join('');
+  const catCount = document.getElementById('cat-count-display');
+  if(catCount) catCount.textContent = DB.categories.length + ' шт.';
+  const tmplCount = document.getElementById('tmpl-count-display');
+  if(tmplCount) tmplCount.textContent = (DB.templates||[]).length + ' шт.';
 }
 
 // ─── CAT MANAGER ────────────────────────────────────────────────────
 function openCatManager(){
   renderCatManager();
   openModal('modal-cats');
+}
+
+function openTemplatesManager(){
+  renderTemplateSettings();
+  openModal('modal-templates');
 }
 
 function renderCatManager(){

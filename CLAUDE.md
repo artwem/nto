@@ -56,6 +56,7 @@ Single global `DB` object persisted to `localStorage` under `budgetDB_v2`. Every
   limits:      {'2026-04': [15000, ...]}, // per-category monthly limits, keyed by monthKey()
   syncUrl:     'https://script.google.com/...',
   goals:       [{id, name, target, saved, deadline, color}, ...],
+  templates:   [{id, name, cat, amount, comment, color}, ...],  // expense templates, color optional
   notifsEnabled: false,
   notifThreshold: 90,                     // % of limit that triggers push notification
   _lastSyncedLimits: {},                  // baseline for 3-way merge conflict detection
@@ -106,3 +107,9 @@ Cache-first for assets, network-first for HTML. The `V` timestamp at the top of 
 - `toast(msg)` — 2.2s bottom toast
 - `uid()` — generates short alphanumeric ID
 - `checkBudgetNotifications()` — call after saving an expense to fire push notifications
+- `renderTemplateChips()` — re-renders quick-add template buttons on the Day tab header
+- `CAT_COLORS` — 16-color palette array used app-wide for categories; color pickers use a subset of 7
+
+### Color Picker Pattern
+
+Both goals and templates use the same swatch pattern: a `PALETTE` array, a `_selectedColor` module-level variable, a `_renderColorPicker()` that draws circular `div` swatches with border highlight, and a `selectColor(c)` that updates state and re-renders. Replicate this pattern for any new color-selectable entity.
