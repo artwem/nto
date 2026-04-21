@@ -787,7 +787,8 @@ if ('serviceWorker' in navigator) {
 
 // ─── DATA ───────────────────────────────────────────────────────────
 
-const CAT_COLORS = ['#378add','#1d9e75','#d85a30','#ba7517','#d4537e','#639922','#534ab7','#e67e22','#185fa5','#993556','#3b6d11','#a32d2d','#0f6e56','#8e44ad','#993c1d','#7f8c8d'];
+const CAT_COLORS  = ['#378add','#1d9e75','#d85a30','#ba7517','#d4537e','#639922','#534ab7','#e67e22','#185fa5','#993556','#3b6d11','#a32d2d','#0f6e56','#8e44ad','#993c1d','#7f8c8d'];
+const GOAL_COLORS = ['#185fa5','#1d9e75','#d85a30','#8e44ad','#d4537e','#ba7517','#7f8c8d'];
 
 // ─── DEFAULTS (first run only) ───────────────────────────────────────
 const DEFAULT_CATS = [
@@ -919,6 +920,11 @@ function fmtShort(n){
 }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function renderColorPicker(elementId, palette, selectedColor, callbackName){
+  const el=document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML=palette.map(c=>`<div onclick="${callbackName}('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;box-sizing:border-box;border:2.5px solid ${c===selectedColor?'var(--text)':c}"></div>`).join('');
+}
 function today(){
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -988,18 +994,8 @@ function showPage(name,btn){
   if(name==='stats') renderStats();
   if(name==='assets') renderAssets();
   if(name==='calc'){
-    // Pre-fill start amount with current total assets
-    const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
-    const byBank = {};
-    (DB.assets||[]).filter(a=>!a._deleted).forEach(a => {
-      const bname = a.bankName || allBanks[a.bank] || '';
-      if(!byBank[bname] || a.date > byBank[bname].date) byBank[bname] = a;
-    });
-    let total = 0;
-    Object.entries(byBank).forEach(([name, a]) => {
-      total += (DB.creditBanks||[]).includes(name) ? -a.amount : a.amount;
-    });
-    if(total > 0) document.getElementById('calc-start').value = Math.round(total);
+    const total = _getCurrentAssetsTotal();
+    if(total > 0) document.getElementById('calc-start').value = total;
     setTimeout(calcUpdate, 50);
   }
   if(name==='income') renderIncome();
@@ -1349,9 +1345,9 @@ function openLimitEditor(){
   const opts = [];
   const now = new Date();
   for(let i=0;i<13;i++){
-    let m=now.getMonth()-i, y=now.getFullYear();
-    if(m<0){m+=12;y--;}
-    opts.push({y,m,label:MONTHS_RU[m]+' '+y,key:monthKey(y,m)});
+    let month=now.getMonth()-i, year=now.getFullYear();
+    if(month<0){month+=12;year--;}
+    opts.push({y:year,m:month,label:MONTHS_RU[month]+' '+year,key:monthKey(year,month)});
   }
   sel.innerHTML = opts.map(o=>`<option value="${o.key}">${o.label}</option>`).join('');
   sel.value = monthKey(currentMonth.y,currentMonth.m);
@@ -1375,8 +1371,7 @@ function loadLimitEditor(){
 function saveLimits(){
   const key = document.getElementById('limit-month-sel').value;
   const newLimits = DB.categories.map((_,i)=>{
-    const v = parseFloat(document.getElementById('lim_'+i).value)||0;
-    return v;
+    return parseFloat(document.getElementById('lim_'+i).value)||0;
   });
   DB.limits[key] = newLimits;
   saveDB();
@@ -1435,14 +1430,7 @@ function renderDay(){
 let _editingTemplateId = null;
 let _selectedTemplateColor = CAT_COLORS[0];
 
-function _renderTemplateColorPicker(){
-  const el = document.getElementById('tmpl-color-picker');
-  if(!el) return;
-  el.innerHTML = CAT_COLORS.map(c=>
-    `<div onclick="selectTemplateColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;box-sizing:border-box;border:2.5px solid ${c===_selectedTemplateColor?'var(--text)':c}"></div>`
-  ).join('');
-}
-
+function _renderTemplateColorPicker(){ renderColorPicker('tmpl-color-picker', CAT_COLORS, _selectedTemplateColor, 'selectTemplateColor'); }
 function selectTemplateColor(c){ _selectedTemplateColor=c; _renderTemplateColorPicker(); }
 
 function renderTemplateChips(){
@@ -1926,9 +1914,10 @@ function renderStats(){
 
 // ═══ assets.js ═══
 
-// ─── RENDER: ASSETS ─────────────────────────────────────────────────
+/// ─── RENDER: ASSETS ─────────────────────────────────────────────────
+function getAllBanks(){ return [...(DB.banks||[]), ...(DB.creditBanks||[])]; }
+
 function isCredit(bankName){
-  // Check explicit creditBanks list (source of truth)
   return (DB.creditBanks||[]).includes(bankName);
 }
 
@@ -2017,7 +2006,7 @@ function collapseAssetsHistory(){
 
 function renderAssets(){
   const byBank={};
-  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const allBanks = getAllBanks();
   DB.assets.filter(a=>!a._deleted).forEach(a=>{
     // Prefer bankName (string), fall back to index lookup
     const bname = a.bankName || allBanks[a.bank] || '?';
@@ -2112,7 +2101,6 @@ function renderAssets(){
 }
 
 // ─── GOALS ──────────────────────────────────────────────────────────
-const GOAL_COLORS = ['#185fa5','#1d9e75','#d85a30','#8e44ad','#d4537e','#ba7517','#7f8c8d'];
 let _editingGoalId = null;
 let _selectedGoalColor = GOAL_COLORS[0];
 
@@ -2149,7 +2137,7 @@ function renderGoals(){
 }
 
 function _getCurrentAssetsTotal(){
-  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const allBanks = getAllBanks();
   const latest = {};
   (DB.assets||[]).filter(a=>!a._deleted).forEach(a => {
     const name = a.bankName || allBanks[a.bank] || String(a.bank);
@@ -2176,14 +2164,7 @@ function openGoalModal(id){
   openModal('modal-goal');
 }
 
-function _renderGoalColorPicker(){
-  const el = document.getElementById('goal-color-picker');
-  if(!el) return;
-  el.innerHTML = GOAL_COLORS.map(c=>
-    `<div onclick="selectGoalColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;box-sizing:border-box;border:2.5px solid ${c===_selectedGoalColor?'var(--text)':c}"></div>`
-  ).join('');
-}
-
+function _renderGoalColorPicker(){ renderColorPicker('goal-color-picker', GOAL_COLORS, _selectedGoalColor, 'selectGoalColor'); }
 function selectGoalColor(c){ _selectedGoalColor=c; _renderGoalColorPicker(); }
 
 function saveGoal(){
@@ -2215,7 +2196,7 @@ function deleteGoal(){
 
 // ─── ASSET CRUD ─────────────────────────────────────────────────────
 function openAssetModal(prefillBankName){
-  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const allBanks = getAllBanks();
   document.getElementById('asset-bank').innerHTML = allBanks.map((b,i)=>{
     const credit = i >= (DB.banks||[]).length;
     return `<option value="${i}">${b}${credit?' (кредит)':''}</option>`;
@@ -2233,7 +2214,7 @@ function saveAsset(){
   const amt = parseFloat(document.getElementById('asset-amount').value);
   if(isNaN(amt)||amt<0){toast('Введите сумму');return;}
   const bankIdx = parseInt(document.getElementById('asset-bank').value);
-  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const allBanks = getAllBanks();
   const bankName = allBanks[bankIdx] || '';
   if(!bankName){toast('Банк не найден'); return;}
   // Store bankName as primary key — bank index can drift after sync
@@ -2256,11 +2237,10 @@ function renderBankManager(){
     const badge = isCredit
       ? '<span style="font-size:10px;background:var(--red-bg);color:var(--red);padding:1px 5px;border-radius:4px;margin-left:6px">кредит</span>'
       : '';
-    var t = type, ix = i;
-    return '<div class="setting-row" style="cursor:default;gap:6px" id="bank-row-'+t+'-'+ix+'">'
-      + '<span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditBank(&quot;'+t+'&quot;,'+ix+')">'+b+badge+'</span>'
-      + '<button class="btn small icon-btn" onclick="startEditBank(&quot;'+t+'&quot;,'+ix+')" title="Переименовать"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5a1.5 1.5 0 012.1 2.1L5.5 13.1 2 14l.9-3.5L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="9.5" y1="4.5" x2="11.5" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>'
-      + '<button class="btn danger small icon-btn" onclick="removeBank(&quot;'+t+'&quot;,'+ix+')"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>'
+    return '<div class="setting-row" style="cursor:default;gap:6px" id="bank-row-'+type+'-'+i+'">'
+      + '<span class="setting-label" style="flex:1;cursor:pointer" onclick="startEditBank(&quot;'+type+'&quot;,'+i+')">'+b+badge+'</span>'
+      + '<button class="btn small icon-btn" onclick="startEditBank(&quot;'+type+'&quot;,'+i+')" title="Переименовать"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5a1.5 1.5 0 012.1 2.1L5.5 13.1 2 14l.9-3.5L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="9.5" y1="4.5" x2="11.5" y2="6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>'
+      + '<button class="btn danger small icon-btn" onclick="removeBank(&quot;'+type+'&quot;,'+i+')"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>'
       + '</div>';
   }
   const normalRows = (DB.banks||[]).map((b,i) => bankRow(b,'normal',i)).join('');
@@ -2376,7 +2356,7 @@ let _editingAssetDate = null;
 
 function openEditAssetDate(date){
   _editingAssetDate = date;
-  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const allBanks = getAllBanks();
 
   document.getElementById('asset-edit-title').textContent = 'Активы за ' + date;
 
@@ -2420,7 +2400,7 @@ function openEditAssetDate(date){
 
 function saveAssetEdit(){
   if(!_editingAssetDate) return;
-  const allBanks = [...(DB.banks||[]), ...(DB.creditBanks||[])];
+  const allBanks = getAllBanks();
   const date = _editingAssetDate;
 
   // Remove existing records for this date
