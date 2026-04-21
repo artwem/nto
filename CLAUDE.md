@@ -31,9 +31,13 @@ Each JS module is inlined in `index.html` with a section marker comment:
 ```
 // ═══ budget.js ═══
 // ═══ day.js ═══
+// ═══ income.js ═══
 // ═══ assets.js ═══
+// ═══ stats.js ═══
+// ═══ calc.js ═══
 // ═══ settings.js ═══
 // ═══ sync.js ═══
+// ═══ init.js ═══
 ```
 
 Similarly, `nav.html`, `pages.html`, and `modals.html` are partial HTML fragments — they're only used by `build.sh`. The nav/pages/modals content must be edited directly in `index.html`.
@@ -82,7 +86,13 @@ Each tab has a `render*()` function called after any data change:
 
 ### Sync — `js/sync.js` + `apps-script/Code.gs`
 
-Optional 2-way sync with Google Sheets via a deployed Google Apps Script URL in `DB.syncUrl`. Auto-syncs every 15 seconds. On startup: push local data first, then pull from sheet. Uses `DB._lastSyncedLimits` as a baseline for 3-way merge conflict detection on limits — if both local and sheet diverged from the baseline, a conflict modal is shown.
+Optional 2-way sync with Google Sheets via a deployed Google Apps Script URL in `DB.syncUrl`. Auto-syncs every 15 seconds when `DB._dirty`. On startup: **push first if dirty, then pull** — critical to preserve local edits made while offline/hidden. Uses `DB._lastSyncedLimits` as a baseline for 3-way merge conflict detection on limits — if both local and sheet diverged from the baseline, a conflict modal is shown.
+
+**Merge logic for expenses (`mergePullData`):**
+- Entries with `gs_` prefix IDs are replaced by the sheet version
+- New expenses created in the app use `uid()` IDs (not `gs_`) so they survive a pull before being pushed; they are replaced by the sheet's `gs_` version after the next push+pull cycle
+- App entries for the same `cat+date` as a sheet entry are dropped (sheet has the authoritative sum)
+- `_deleted` entries are cleaned up on merge
 
 The Apps Script (`Code.gs`) creates/updates sheets named "По дням YYYY", Russian month names, "Активы", "Доходы". When reading limits from the sheet, per-month sheets take precedence over the Шаблон (template) sheet.
 
@@ -96,6 +106,8 @@ Cache-first for assets, network-first for HTML. The `V` timestamp at the top of 
 
 - `saveDB()` — persist to localStorage; sets `DB._dirty = true`
 - `renderBudget()`, `renderDay()`, `renderAssets()`, `renderSettings()`, etc. — full tab re-render
+- `getAllBanks()` — returns `[...DB.banks, ...DB.creditBanks]`; use instead of inline spread
+- `isCredit(bankName)` — true if bank is in `DB.creditBanks`
 - `fmt(n)` — format as `12 345₽`
 - `fmtShort(n)` — compact: `12к`, `1.2М`
 - `esc(s)` — HTML-escape (always use for user-supplied strings in innerHTML)
@@ -103,13 +115,23 @@ Cache-first for assets, network-first for HTML. The `V` timestamp at the top of 
 - `monthKey(y, m)` — `YYYY-MM` key used in `limits`
 - `getCatColor(idx)` — hex color for category (from `DB.catColors` or `CAT_COLORS` palette)
 - `getCatSpent(idx, y, m)` — sum of non-deleted expenses for category in month
+- `_getCurrentAssetsTotal()` — sum of each bank's most recent non-deleted value (debit − credit)
 - `openModal(id)` / `closeModal(id)` — show/hide `.overlay` modals
 - `toast(msg)` — 2.2s bottom toast
-- `uid()` — generates short alphanumeric ID
+- `uid()` — generates short alphanumeric ID; use for all new entity IDs
 - `checkBudgetNotifications()` — call after saving an expense to fire push notifications
 - `renderTemplateChips()` — re-renders quick-add template buttons on the Day tab header
-- `CAT_COLORS` — 16-color palette array used app-wide for categories; color pickers use a subset of 7
+- `CAT_COLORS` — 16-color palette array for categories
+- `GOAL_COLORS` — 7-color palette for goals (defined next to `CAT_COLORS`)
 
 ### Color Picker Pattern
 
-Both goals and templates use the same swatch pattern: a `PALETTE` array, a `_selectedColor` module-level variable, a `_renderColorPicker()` that draws circular `div` swatches with border highlight, and a `selectColor(c)` that updates state and re-renders. Replicate this pattern for any new color-selectable entity.
+Goals and templates share a single helper:
+```javascript
+renderColorPicker(elementId, palette, selectedColor, callbackName)
+```
+Each entity keeps its own `_selectedXxxColor` module-level variable and a thin `_renderXxxColorPicker()` wrapper that calls `renderColorPicker`. Replicate this pattern for any new color-selectable entity.
+
+### Assets Total
+
+`_getCurrentAssetsTotal()` sums each bank's **most recent non-deleted entry** regardless of date. Do not filter by a shared "latest date" — banks updated at different times are all included.
