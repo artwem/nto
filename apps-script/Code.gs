@@ -8,7 +8,9 @@ const SHEET_TEMPLATE = 'Шаблон';
 const SHEET_COMMENTS = 'Комментарии';
 const SHEET_ASSETS   = 'Активы';
 const SHEET_INCOME   = 'Доходы';
-const SHEET_COLORS   = 'Настройки';
+const SHEET_COLORS    = 'Настройки';
+const SHEET_GOALS     = 'Цели';
+const SHEET_TEMPLATES = 'Шаблоны';
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                    'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // Дефолтные категории — используются только при создании пустого Шаблона
@@ -181,6 +183,12 @@ function setupSheets(ss) {
     const colorRows = DEFAULT_CATS.map(cat => [cat, DEFAULT_COLORS[cat] || '#7f8c8d']);
     colSh.getRange(2, 1, colorRows.length, 2).setValues(colorRows);
   }
+
+  // Hidden goals and templates sheets
+  const goalsSh = ensureSheet(ss, SHEET_GOALS,     ['id','name','target','saved','deadline','color']);
+  const tmplsSh = ensureSheet(ss, SHEET_TEMPLATES, ['id','name','cat','amount','comment','color']);
+  if (goalsSh.isSheetHidden() === false) goalsSh.hideSheet();
+  if (tmplsSh.isSheetHidden() === false) tmplsSh.hideSheet();
 }
 
 function getOrCreateMonthSheet(ss, yr, mo) {
@@ -358,7 +366,35 @@ function pullAll() {
     });
   }
 
-  return { expenses: Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes, catColors };
+  // Read goals
+  const goalsSh2 = ss.getSheetByName(SHEET_GOALS);
+  const goals = [];
+  if (goalsSh2) {
+    const gd = goalsSh2.getDataRange().getValues();
+    for (let r = 1; r < gd.length; r++) {
+      if (!gd[r][0]) continue;
+      goals.push({ id: String(gd[r][0]), name: String(gd[r][1]||''),
+        target: +gd[r][2]||0, saved: +gd[r][3]||0,
+        deadline: String(gd[r][4]||''), color: String(gd[r][5]||'') });
+    }
+  }
+
+  // Read templates — cat stored as category name, converted to index on pull
+  const tmplsSh2 = ss.getSheetByName(SHEET_TEMPLATES);
+  const templates = [];
+  if (tmplsSh2) {
+    const td2 = tmplsSh2.getDataRange().getValues();
+    for (let r = 1; r < td2.length; r++) {
+      if (!td2[r][0]) continue;
+      const catName = String(td2[r][2]||'');
+      const catIdx = categories.indexOf(catName);
+      templates.push({ id: String(td2[r][0]), name: String(td2[r][1]||''),
+        cat: catIdx >= 0 ? catIdx : 0, amount: +td2[r][3]||0,
+        comment: String(td2[r][4]||''), color: String(td2[r][5]||'') });
+    }
+  }
+
+  return { expenses: Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes, catColors, goals, templates };
 }
 
 // ── PUSH ──────────────────────────────────────────────────────────────
@@ -717,6 +753,29 @@ function pushAll(data) {
     else { incSh.appendRow(row); existInc[inc.id]=incSh.getLastRow(); }
     written.incomes++;
   }
+
+  // --- 7. Цели ---
+  const goalsPush = ensureSheet(ss, SHEET_GOALS, ['id','name','target','saved','deadline','color']);
+  const goalsLastRow = goalsPush.getLastRow();
+  if (goalsLastRow > 1) goalsPush.getRange(2, 1, goalsLastRow - 1, 6).clearContent();
+  (data.goals||[]).forEach((g, i) => {
+    goalsPush.getRange(i+2, 1, 1, 6).setValues([[
+      g.id, g.name||'', g.target||0, g.saved||0, g.deadline||'', g.color||''
+    ]]);
+  });
+  written.goals = (data.goals||[]).length;
+
+  // --- 8. Шаблоны --- cat хранится как имя категории
+  const tmplsPush = ensureSheet(ss, SHEET_TEMPLATES, ['id','name','cat','amount','comment','color']);
+  const tmplsLastRow = tmplsPush.getLastRow();
+  if (tmplsLastRow > 1) tmplsPush.getRange(2, 1, tmplsLastRow - 1, 6).clearContent();
+  (data.templates||[]).forEach((t, i) => {
+    const catName = categories[t.cat] || '';
+    tmplsPush.getRange(i+2, 1, 1, 6).setValues([[
+      t.id, t.name||'', catName, t.amount||0, t.comment||'', t.color||''
+    ]]);
+  });
+  written.templates = (data.templates||[]).length;
 
   return written;
 }

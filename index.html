@@ -24,6 +24,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
@@ -365,8 +366,8 @@ if ('serviceWorker' in navigator) {
       <span class="setting-chevron">›</span>
     </div>
     <input type="file" id="restore-input" accept=".json" style="display:none" onchange="restoreDB(this)">
-    <div class="setting-row" onclick="exportCSV()">
-      <span class="setting-label">📥 Экспорт CSV</span>
+    <div class="setting-row" onclick="exportExcel()">
+      <span class="setting-label">📥 Экспорт Excel</span>
       <span class="setting-chevron">›</span>
     </div>
   </div>
@@ -807,6 +808,15 @@ if ('serviceWorker' in navigator) {
 
 const CAT_COLORS  = ['#378add','#1d9e75','#d85a30','#ba7517','#d4537e','#639922','#534ab7','#e67e22','#185fa5','#993556','#3b6d11','#a32d2d','#0f6e56','#8e44ad','#993c1d','#7f8c8d'];
 const GOAL_COLORS = ['#185fa5','#1d9e75','#d85a30','#8e44ad','#d4537e','#ba7517','#7f8c8d'];
+const TEMPLATE_COLORS = [
+  '#185fa5','#378add','#5dade2','#2e86ab',
+  '#1d9e75','#16a085','#27ae60','#639922','#3b6d11',
+  '#d85a30','#e74c3c','#a32d2d','#993c1d',
+  '#e67e22','#ba7517','#f39c12',
+  '#8e44ad','#9c27b0','#534ab7','#673ab7',
+  '#d4537e','#e91e63','#993556',
+  '#7f8c8d','#5d6d7e','#2c3e50','#0f6e56','#e84393'
+];
 
 // ─── DEFAULTS (first run only) ───────────────────────────────────────
 const DEFAULT_CATS = [
@@ -1579,9 +1589,9 @@ function renderExpenseSearch(query){
 
 // ─── EXPENSE TEMPLATES ──────────────────────────────────────────────
 let _editingTemplateId = null;
-let _selectedTemplateColor = CAT_COLORS[0];
+let _selectedTemplateColor = TEMPLATE_COLORS[0];
 
-function _renderTemplateColorPicker(){ renderColorPicker('tmpl-color-picker', CAT_COLORS, _selectedTemplateColor, 'selectTemplateColor'); }
+function _renderTemplateColorPicker(){ renderColorPicker('tmpl-color-picker', TEMPLATE_COLORS, _selectedTemplateColor, 'selectTemplateColor'); }
 function selectTemplateColor(c){ _selectedTemplateColor=c; _renderTemplateColorPicker(); }
 
 function renderTemplateChips(){
@@ -1630,14 +1640,14 @@ function openTemplateModal(id){
     setMoneyInput('tmpl-amount', t.amount);
     document.getElementById('tmpl-comment').value = t.comment||'';
     document.getElementById('tmpl-delete-btn').style.display='block';
-    _selectedTemplateColor = t.color || CAT_COLORS[0];
+    _selectedTemplateColor = t.color || TEMPLATE_COLORS[0];
   } else {
     document.getElementById('template-modal-title').textContent='Новый шаблон';
     document.getElementById('tmpl-name').value='';
     setMoneyInput('tmpl-amount','');
     document.getElementById('tmpl-comment').value='';
     document.getElementById('tmpl-delete-btn').style.display='none';
-    _selectedTemplateColor = CAT_COLORS[0];
+    _selectedTemplateColor = TEMPLATE_COLORS[0];
   }
   _renderTemplateColorPicker();
   openModal('modal-template');
@@ -2183,24 +2193,16 @@ function renderAssetsHistory(rows, showAll){
     btn.style.cssText = 'font-size:12px;width:100%';
     if(!showAll){
       btn.textContent = 'Показать все ' + rows.length + ' записей';
-      btn.onclick = expandAssetsHistory;
+      btn.onclick = () => renderAssetsHistory(_assetsHistoryRows, true);
     } else {
       btn.textContent = 'Скрыть ▲';
-      btn.onclick = collapseAssetsHistory;
+      btn.onclick = () => renderAssetsHistory(_assetsHistoryRows, false);
     }
     td.appendChild(btn);
   }
 }
 
 let _assetsHistoryRows = [];
-
-function expandAssetsHistory(){
-  renderAssetsHistory(_assetsHistoryRows, true);
-}
-
-function collapseAssetsHistory(){
-  renderAssetsHistory(_assetsHistoryRows, false);
-}
 
 function renderAssets(){
   const allBanks = getAllBanks();
@@ -3097,19 +3099,90 @@ function checkAssetNotification(){
   });
 }
 
-function exportCSV(){
-  const rows = [['id','категория','сумма','дата','комментарий']];
-  DB.expenses.filter(e => !e._deleted).forEach(e=>{
-    rows.push([e.id, DB.categories[e.cat]||'', e.amount, e.date, e.comment||'']);
+function exportExcel(){
+  if(!window.XLSX){ toast('Библиотека XLSX не загружена'); return; }
+  const X = window.XLSX;
+  const wb = X.utils.book_new();
+  const cats = DB.categories || [];
+  const MO = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+               'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+  // ── По дням YYYY ─────────────────────────────────────────────────────
+  const expByYear = {};
+  expByYear[String(new Date().getFullYear())] = [];
+  (DB.expenses||[]).filter(e => !e._deleted).forEach(e => {
+    const yr = String(e.date||'').slice(0,4);
+    if(yr.length !== 4) return;
+    (expByYear[yr] = expByYear[yr]||[]).push(e);
   });
-  const csv = rows.map(r =>
-    r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')
-  ).join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
-  a.download = 'budget_' + today() + '.csv';
-  a.click();
-  toast('CSV скачан');
+
+  Object.keys(expByYear).sort().forEach(yr => {
+    const yrNum = parseInt(yr);
+    const dates = [];
+    for(let d = new Date(yrNum,0,1); d.getFullYear()===yrNum; d.setDate(d.getDate()+1))
+      dates.push(d.toISOString().slice(0,10));
+
+    const expMap = {};
+    (expByYear[yr]||[]).forEach(e => {
+      const k = e.cat+'_'+e.date;
+      expMap[k] = (expMap[k]||0) + e.amount;
+    });
+
+    const header = ['', ...dates.map(d => d.slice(5).replace('-','.'))];
+    const itogo  = ['Итого', ...dates.map(d => {
+      let t = 0; cats.forEach((_,ci) => { t += expMap[ci+'_'+d]||0; }); return t||'';
+    })];
+    const rows = cats.map((cat,ci) => [cat, ...dates.map(d => expMap[ci+'_'+d]||'')]);
+
+    const ws = X.utils.aoa_to_sheet([header, itogo, ...rows]);
+    X.utils.book_append_sheet(wb, ws, ('По дням '+yr).slice(0,31));
+  });
+
+  // ── Шаблон ───────────────────────────────────────────────────────────
+  const limKeys = Object.keys(DB.limits||{}).sort();
+  const latestLim = limKeys.length ? (DB.limits[limKeys[limKeys.length-1]]||[]) : [];
+  const limHdr = ['Статья Расходов','Сумма/Мес','Доля Общая','Доля Лимита','Лимиты'];
+  const tmplWs = X.utils.aoa_to_sheet([
+    limHdr, ['Итого','','','',''],
+    ...cats.map((c,i) => [c,'','','', latestLim[i]||0])
+  ]);
+  X.utils.book_append_sheet(wb, tmplWs, 'Шаблон');
+
+  // ── Месячные листы ────────────────────────────────────────────────────
+  Object.entries(DB.limits||{}).sort(([a],[b]) => a.localeCompare(b)).forEach(([key,lim]) => {
+    const [yr,mo] = key.split('-').map(Number);
+    const ws = X.utils.aoa_to_sheet([
+      limHdr, ['Итого','','','',''],
+      ...cats.map((c,i) => [c,'','','', (lim||[])[i]||0])
+    ]);
+    X.utils.book_append_sheet(wb, ws, (MO[mo-1]+' '+yr).slice(0,31));
+  });
+
+  // ── Активы ───────────────────────────────────────────────────────────
+  const debit  = DB.banks||[];
+  const credit = DB.creditBanks||[];
+  const allB   = [...debit,...credit];
+  const byDate = {};
+  (DB.assets||[]).filter(a => !a._deleted).forEach(a => {
+    if(!a.date) return;
+    const nm = a.bankName || allB[a.bank] || '';
+    if(!nm) return;
+    (byDate[a.date] = byDate[a.date]||{})[nm] = a.amount;
+  });
+  const aDates = Object.keys(byDate).sort();
+  const aHdr   = ['Общий актив','Дата',...debit,...credit];
+  const aRows  = aDates.map(d => {
+    const row = byDate[d];
+    let total = 0;
+    debit.forEach(b  => { total += row[b]||0; });
+    credit.forEach(b => { total -= row[b]||0; });
+    return [total||'', d, ...debit.map(b => row[b]||''), ...credit.map(b => row[b]||'')];
+  });
+  const aWs = X.utils.aoa_to_sheet([aHdr,...aRows]);
+  X.utils.book_append_sheet(wb, aWs, 'Активы');
+
+  X.writeFile(wb, 'budget_'+today()+'.xlsx');
+  toast('Excel скачан');
 }
 
 function confirmClearData(){
@@ -3901,7 +3974,9 @@ function buildPayload(){
     bankDeletions: DB.bankDeletions || [],
     banks: DB.banks,
     creditBanks: DB.creditBanks || [],
-    limits: DB.limits
+    limits: DB.limits,
+    goals: DB.goals || [],
+    templates: DB.templates || []
   };
 }
 
@@ -3964,6 +4039,10 @@ function mergePullData(d){
     const appOnly = (DB.incomes||[]).filter(i => !sheetIds.has(i.id));
     DB.incomes = [...appOnly, ...(d.incomes||[])];
   }
+
+  // Goals and templates — sheet wins, full replace
+  if (d.goals !== undefined) DB.goals = d.goals;
+  if (d.templates !== undefined) DB.templates = d.templates;
 
   // Merge banks — add any new banks from sheet not yet in app
   // Skip banks pending deletion (bankDeletions queue) — they were intentionally removed
