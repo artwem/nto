@@ -14,7 +14,12 @@
       "Bash(git commit *)",
       "Bash(git add *)",
       "mcp__plugin_claude-mem_mcp-search__smart_outline",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(python3 -m http.server 8080)",
+      "Bash(echo \"PID $!\")",
+      "Bash(curl *)",
+      "Bash(git diff *)",
+      "Read(//tmp/**)"
     ]
   }
 }
