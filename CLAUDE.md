@@ -60,7 +60,7 @@ Single global `DB` object persisted to `localStorage` under `budgetDB_v2`. Every
   limits:      {'2026-04': [15000, ...]}, // per-category monthly limits, keyed by monthKey()
   syncUrl:     'https://script.google.com/...',
   goals:       [{id, name, target, saved, deadline, color}, ...],
-  templates:   [{id, name, cat, amount, comment, color}, ...],  // expense templates, color optional
+  templates:   [{id, name, cat, amount, comment, color}, ...],  // cat = category index
   notifsEnabled: false,
   notifThreshold: 90,                     // % of limit that triggers push notification
   _lastSyncedLimits: {},                  // baseline for 3-way merge conflict detection
@@ -82,11 +82,15 @@ Each tab has a `render*()` function called after any data change:
 | Stats | `═══ stats.js ═══` | Chart.js graphs (6-month trends, category breakdown) |
 | Assets | `═══ assets.js ═══` | Bank accounts, credit cards, savings chart, goals |
 | Forecast | `═══ calc.js ═══` | Compound interest / savings forecast calculator |
-| Settings | `═══ settings.js ═══` | Category/bank CRUD, sync, backup/restore, notifications |
+| Settings | `═══ settings.js ═══` | Category/bank CRUD, sync, backup/restore (JSON + Excel), notifications |
 
 ### Sync — `js/sync.js` + `apps-script/Code.gs`
 
 Optional 2-way sync with Google Sheets via a deployed Google Apps Script URL in `DB.syncUrl`. Auto-syncs every 15 seconds when `DB._dirty`. On startup: **push first if dirty, then pull** — critical to preserve local edits made while offline/hidden. Uses `DB._lastSyncedLimits` as a baseline for 3-way merge conflict detection on limits — if both local and sheet diverged from the baseline, a conflict modal is shown.
+
+**What syncs (both directions):** `expenses`, `assets`, `incomes`, `categories`, `catColors`, `banks`, `creditBanks`, `limits`, `goals`, `templates`.
+
+**What does NOT sync:** `syncUrl`, `notifsEnabled`, `notifThreshold` (device-local settings).
 
 **Merge logic for expenses (`mergePullData`):**
 - Entries with `gs_` prefix IDs are replaced by the sheet version
@@ -94,9 +98,27 @@ Optional 2-way sync with Google Sheets via a deployed Google Apps Script URL in 
 - App entries for the same `cat+date` as a sheet entry are dropped (sheet has the authoritative sum)
 - `_deleted` entries are cleaned up on merge
 
-The Apps Script (`Code.gs`) creates/updates sheets named "По дням YYYY", Russian month names, "Активы", "Доходы". When reading limits from the sheet, per-month sheets take precedence over the Шаблон (template) sheet.
+**Merge logic for goals and templates:** sheet wins, full replace on pull.
 
-To update server-side sync logic: edit `Code.gs` in the Google Apps Script editor, then paste back here.
+**Google Sheets structure** created by `Code.gs`:
+
+| Sheet | Visibility | Contents |
+|-------|-----------|----------|
+| По дням YYYY | visible | rows=categories, cols=dates of year, daily expense amounts |
+| Шаблон | visible | categories + default limits |
+| Январь YYYY … | visible | per-month category limits |
+| Активы | visible | bank account balances by date |
+| Доходы | hidden | income records |
+| Комментарии | hidden | expense comments |
+| Настройки | hidden | category colors |
+| Цели | hidden | goals (id, name, target, saved, deadline, color) |
+| Шаблоны | hidden | expense templates (id, name, cat-name, amount, comment, color) |
+
+**Updating Apps Script:** edit `apps-script/Code.gs` locally → copy contents into the Google Apps Script editor → deploy new version. `build.sh` automatically inlines Code.gs into `dist/index.html`; in dev mode `loadAppsScriptCode()` fetches it from `./apps-script/Code.gs` directly.
+
+### Excel Export
+
+Settings → "Экспорт Excel" calls `exportExcel()` (in `═══ settings.js ═══`). Uses **SheetJS 0.18.5** loaded from CDN (`xlsx.full.min.js`). Produces a `.xlsx` file with the same visible sheet structure as Google Sheets: По дням YYYY, Шаблон, month sheets, Активы. Hidden sheets (Доходы, Комментарии, etc.) are excluded. For a full data backup use "Резервная копия" (JSON dump of entire `DB`).
 
 ### PWA Caching — `sw.js`
 
@@ -121,8 +143,9 @@ Cache-first for assets, network-first for HTML. The `V` timestamp at the top of 
 - `uid()` — generates short alphanumeric ID; use for all new entity IDs
 - `checkBudgetNotifications()` — call after saving an expense to fire push notifications
 - `renderTemplateChips()` — re-renders quick-add template buttons on the Day tab header
-- `CAT_COLORS` — 16-color palette array for categories
-- `GOAL_COLORS` — 7-color palette for goals (defined next to `CAT_COLORS`)
+- `CAT_COLORS` — 16-color palette for categories
+- `GOAL_COLORS` — 7-color palette for goals
+- `TEMPLATE_COLORS` — 28-color palette for expense templates (wider range than CAT_COLORS)
 
 ### Color Picker Pattern
 

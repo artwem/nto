@@ -24,6 +24,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
@@ -298,12 +299,13 @@ if ('serviceWorker' in navigator) {
     </div>
   </div>
   <div class="spacer"></div>
-  <div class="sec-hdr"><span class="sec-title">Google Sheets синхронизация</span></div>
+  <div class="sec-hdr"><span class="sec-title">Синхронизация через Google Drive</span></div>
   <div class="info-box">
-    Подключите Google Apps Script для двусторонней синхронизации.<br>
-    1. Откройте вашу таблицу → Расширения → Apps Script<br>
-    2. Вставьте скрипт (кнопка ниже) и нажмите «Опубликовать как веб-приложение»<br>
-    3. Скопируйте URL и вставьте в поле ниже
+    Данные хранятся в файле <b>nto_data.json</b> на вашем Google Drive.<br>
+    1. Откройте Google Apps Script (script.google.com) → создайте проект<br>
+    2. Вставьте скрипт (кнопка ниже) → Развернуть → Новое развертывание<br>
+    3. Тип: Веб-приложение | Выполнять как: Я | Доступ: <b>Все</b><br>
+    4. Скопируйте URL и вставьте в поле ниже
   </div>
   <div class="settings-list">
     <div class="setting-row" onclick="copyAppsScript()">
@@ -319,10 +321,6 @@ if ('serviceWorker' in navigator) {
       <span class="setting-label">⚡ Проверить подключение</span>
       <span class="setting-value" id="sync-test-result"></span>
     </div>
-    <div class="setting-row" id="sync-sheet-row" style="display:none" onclick="openSpreadsheet()">
-      <span class="setting-label">📊 Открыть таблицу</span>
-      <span class="setting-chevron">›</span>
-    </div>
     <div class="setting-row" id="sync-last-row" style="display:none;cursor:default">
       <span class="setting-label" style="color:var(--muted)">Последняя синхронизация</span>
       <span class="setting-value" id="sync-last-time">—</span>
@@ -337,11 +335,11 @@ if ('serviceWorker' in navigator) {
       </div>
     </div>
     <div class="setting-row" id="sync-pull-row" onclick="pullFromSheets()" style="display:none">
-      <span class="setting-label">⬇ Загрузить из таблицы</span>
+      <span class="setting-label">⬇ Загрузить из Drive</span>
       <span class="setting-chevron">›</span>
     </div>
     <div class="setting-row" id="sync-push-row" onclick="pushToSheets()" style="display:none">
-      <span class="setting-label">⬆ Выгрузить в таблицу</span>
+      <span class="setting-label">⬆ Сохранить в Drive</span>
       <span class="setting-chevron">›</span>
     </div>
   </div>
@@ -365,8 +363,19 @@ if ('serviceWorker' in navigator) {
       <span class="setting-chevron">›</span>
     </div>
     <input type="file" id="restore-input" accept=".json" style="display:none" onchange="restoreDB(this)">
-    <div class="setting-row" onclick="exportCSV()">
-      <span class="setting-label">📥 Экспорт CSV</span>
+    <div class="setting-row" onclick="exportExcel()">
+      <span class="setting-label">📥 Экспорт Excel</span>
+      <span class="setting-chevron">›</span>
+    </div>
+    <div class="setting-row" onclick="doDriveBackup()" id="drive-backup-row">
+      <div>
+        <div class="setting-label">☁️ Бэкап на Google Drive</div>
+        <div id="drive-backup-date" style="font-size:11px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <span class="setting-chevron">›</span>
+    </div>
+    <div class="setting-row" onclick="restoreFromDrive()" id="drive-restore-row">
+      <span class="setting-label">☁️ Восстановить из Drive</span>
       <span class="setting-chevron">›</span>
     </div>
   </div>
@@ -473,21 +482,10 @@ if ('serviceWorker' in navigator) {
     <h2 id="expense-modal-title">Добавить расход</h2>
     <div class="fgrp">
       <label class="flbl">Категория</label>
-      <select id="exp-cat" onchange="updateExpCatHint()"></select>
-      <div id="exp-cat-hint" style="margin-top:6px;display:none">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-          Уже записано: <span id="exp-cat-spent" style="font-weight:600;color:var(--text)"></span>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted)" onclick="toggleAddMode()">
-          <div id="add-mode-visual" style="width:18px;height:18px;border-radius:4px;border:2px solid var(--border2);background:var(--card);flex-shrink:0;display:flex;align-items:center;justify-content:center">
-            <svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4L4 7.5L10 1" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-          Добавить к существующей сумме
-        </label>
-      </div>
+      <select id="exp-cat"></select>
     </div>
     <div class="fgrp"><label class="flbl">Сумма, ₽</label><input type="text" id="exp-amount" placeholder="0" inputmode="decimal" oninput="formatMoneyInput(this)"/></div>
-    <div class="fgrp"><label class="flbl">Дата</label><input type="date" id="exp-date" onchange="updateExpCatHint()"/></div>
+    <div class="fgrp"><label class="flbl">Дата</label><input type="date" id="exp-date"/></div>
     <div class="fgrp"><label class="flbl">Комментарий</label><input type="text" id="exp-comment" placeholder="Необязательно"/></div>
     <div class="btn-row">
       <button class="btn danger small" id="exp-delete-btn" onclick="deleteExpense()" style="display:none">Удалить</button>
@@ -674,7 +672,7 @@ if ('serviceWorker' in navigator) {
   <div class="sheet" style="position:relative">
     <button class="close-btn" onclick="closeModal('modal-sync-choice')">✕</button>
     <h2 style="margin-bottom:6px">Синхронизация</h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5">Выберите направление синхронизации с Google Sheets</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5">Выберите направление синхронизации с Google Drive</p>
 
     <button onclick="closeModal('modal-sync-choice');pullFromSheets()" style="
       width:100%;padding:14px 16px;border-radius:var(--r);
@@ -684,8 +682,8 @@ if ('serviceWorker' in navigator) {
       transition:background .12s;-webkit-tap-highlight-color:transparent">
       <span style="font-size:24px;flex-shrink:0">⬇</span>
       <span>
-        <div style="font-size:15px;font-weight:600;color:var(--text)">Загрузить из таблицы</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">Данные из Google Sheets → приложение</div>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">Загрузить из Drive</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Данные из Google Drive → приложение</div>
       </span>
     </button>
 
@@ -697,8 +695,8 @@ if ('serviceWorker' in navigator) {
       transition:background .12s;-webkit-tap-highlight-color:transparent">
       <span style="font-size:24px;flex-shrink:0">⬆</span>
       <span>
-        <div style="font-size:15px;font-weight:600;color:var(--text)">Выгрузить в таблицу</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">Данные из приложения → Google Sheets</div>
+        <div style="font-size:15px;font-weight:600;color:var(--text)">Сохранить в Drive</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Данные из приложения → Google Drive</div>
       </span>
     </button>
 
@@ -708,36 +706,12 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <!-- MODAL: SYNC CONFLICT -->
-<div class="overlay" id="modal-sync-conflict">
-  <div class="sheet" style="position:relative">
-    <button class="close-btn" onclick="closeModal('modal-sync-conflict')">✕</button>
-    <h2 style="margin-bottom:6px">Конфликт данных</h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:4px;line-height:1.5">Лимиты изменились и в приложении, и в таблице:</p>
-    <p id="sync-conflict-months" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:20px"></p>
-    <button onclick="resolveConflict('local')" style="width:100%;padding:14px 16px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--card);cursor:pointer;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:14px;font-family:inherit">
-      <span style="font-size:24px;flex-shrink:0">📱</span>
-      <span>
-        <div style="font-size:15px;font-weight:600;color:var(--text)">Оставить мои данные</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">Лимиты из приложения → Google Sheets</div>
-      </span>
-    </button>
-    <button onclick="resolveConflict('sheet')" style="width:100%;padding:14px 16px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--card);cursor:pointer;text-align:left;margin-bottom:4px;display:flex;align-items:center;gap:14px;font-family:inherit">
-      <span style="font-size:24px;flex-shrink:0">📊</span>
-      <span>
-        <div style="font-size:15px;font-weight:600;color:var(--text)">Загрузить из таблицы</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">Лимиты из Google Sheets → приложение</div>
-      </span>
-    </button>
-    <div style="height:8px"></div>
-    <button class="btn" onclick="closeModal('modal-sync-conflict')" style="width:100%">Решить позже</button>
-  </div>
-</div>
 
 <!-- MODAL: SYNC SETTINGS -->
 <div class="overlay" id="modal-sync">
   <div class="sheet" style="position:relative">
     <button class="close-btn" onclick="closeModal('modal-sync')">✕</button>
-    <h2>Google Sheets</h2>
+    <h2>Google Drive</h2>
     <div class="fgrp">
       <label class="flbl">URL веб-приложения Apps Script</label>
       <div style="display:flex;gap:8px;align-items:center">
@@ -765,11 +739,11 @@ if ('serviceWorker' in navigator) {
       <div>
         <div style="font-size:20px;font-weight:600;letter-spacing:2px;color:var(--text)">V.O.I.D.</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">Visual Overview of Income &amp; Debt</div>
-        <div style="font-size:11px;color:var(--hint);margin-top:2px">v1.3.0</div>
+        <div style="font-size:11px;color:var(--hint);margin-top:2px">v1.4.0</div>
       </div>
     </div>
     <p style="font-size:14px;color:var(--muted);line-height:1.6;font-style:italic;margin-bottom:12px">Личный финансовый трекер для тех, кто хочет видеть куда уходят деньги.</p>
-    <p style="font-size:14px;color:var(--text);line-height:1.7">Отслеживай расходы по категориям с месячными лимитами, веди учёт активов и кредитов, рассчитывай рост накоплений. Все данные хранятся локально на устройстве и синхронизируются с Google Sheets по твоему желанию.</p>
+    <p style="font-size:14px;color:var(--text);line-height:1.7">Отслеживай расходы по категориям с месячными лимитами, веди учёт активов и кредитов, рассчитывай рост накоплений. Все данные хранятся локально на устройстве и синхронизируются с Google Drive по твоему желанию.</p>
     <div class="btn-row" style="margin-top:20px">
       <button class="btn primary" onclick="closeModal('modal-about')" style="width:100%">Закрыть</button>
     </div>
@@ -789,7 +763,7 @@ if ('serviceWorker' in navigator) {
       <li>Цвета категорий</li>
       <li>URL синхронизации</li>
     </ul>
-    <p style="font-size:12px;color:var(--red);margin-bottom:16px">⚠ Данные в Google Sheets не затрагиваются. Действие нельзя отменить.</p>
+    <p style="font-size:12px;color:var(--red);margin-bottom:16px">⚠ Данные на Google Drive не затрагиваются. Действие нельзя отменить.</p>
     <div class="btn-row">
       <button class="btn" onclick="closeModal('modal-confirm-clear')">Отмена</button>
       <button class="btn danger" onclick="doClearData()">Очистить всё</button>
@@ -807,6 +781,15 @@ if ('serviceWorker' in navigator) {
 
 const CAT_COLORS  = ['#378add','#1d9e75','#d85a30','#ba7517','#d4537e','#639922','#534ab7','#e67e22','#185fa5','#993556','#3b6d11','#a32d2d','#0f6e56','#8e44ad','#993c1d','#7f8c8d'];
 const GOAL_COLORS = ['#185fa5','#1d9e75','#d85a30','#8e44ad','#d4537e','#ba7517','#7f8c8d'];
+const TEMPLATE_COLORS = [
+  '#185fa5','#378add','#5dade2','#2e86ab',
+  '#1d9e75','#16a085','#27ae60','#639922','#3b6d11',
+  '#d85a30','#e74c3c','#a32d2d','#993c1d',
+  '#e67e22','#ba7517','#f39c12',
+  '#8e44ad','#9c27b0','#534ab7','#673ab7',
+  '#d4537e','#e91e63','#993556',
+  '#7f8c8d','#5d6d7e','#2c3e50','#0f6e56','#e84393'
+];
 
 // ─── DEFAULTS (first run only) ───────────────────────────────────────
 const DEFAULT_CATS = [
@@ -838,7 +821,8 @@ let DB = {
   banks: [],
   creditBanks: [],
   limits: {},  // key: "YYYY-MM", value: array of limits per category
-  syncUrl: ''
+  syncUrl: '',
+  lastDriveBackup: ''
 };
 
 let currentMonth = {y:0,m:0};
@@ -879,9 +863,6 @@ function loadDB(){
   if(!DB.creditBanks) DB.creditBanks = [];
   if(!DB.catColors) DB.catColors = {};
   if(!DB.incomes) DB.incomes = [];
-  if(!DB.catRenames) DB.catRenames = [];
-  if(!DB.bankRenames) DB.bankRenames = [];
-  if(!DB.bankDeletions) DB.bankDeletions = [];
   if(!DB.categories) DB.categories = [];
   if(!DB.limits) DB.limits = {};
   if(!DB.goals) DB.goals = [];
@@ -1217,9 +1198,9 @@ function renderBudget(){
 }
 
 function makeCatRow(i, spent, lim, totalLimit, inGroup){
-  const pct = lim>0 ? (spent/lim)*100 : 0;
+  const pct = lim>0 ? (spent/lim)*100 : (spent>0 ? 100 : 0);
   const pctOfBudget = totalLimit>0 ? ((lim/totalLimit)*100) : 0;
-  const isOver = spent>lim && lim>0;
+  const isOver = spent>lim;
   const bar = Math.min(pct,100);
   const barClass = pct<70?'pf-ok':pct<100?'pf-warn':'pf-over';
   const badgeClass = isOver?'badge-over':pct>=70?'badge-warn':'badge-ok';
@@ -1254,53 +1235,9 @@ function makeCatRow(i, spent, lim, totalLimit, inGroup){
 }
 
 // ─── EXPENSE CRUD ───────────────────────────────────────────────────
-let _addMode = true; // true = add to existing, false = replace
-
-const SVG_CHECK = '<svg width="11" height="9" viewBox="0 0 11 9" fill="none"><path d="M1 4L4 7.5L10 1" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-function setAddModeVisual(on){
-  const vis = document.getElementById('add-mode-visual');
-  if(!vis) return;
-  vis.style.borderColor = 'var(--border2)';
-  vis.style.background = 'var(--card)';
-  vis.innerHTML = on ? SVG_CHECK : '';
-}
-
-function toggleAddMode(){
-  _addMode = !_addMode;
-  setAddModeVisual(_addMode);
-}
-
-function updateExpCatHint(){
-  const cat = parseInt(document.getElementById('exp-cat').value);
-  const date = document.getElementById('exp-date').value || currentDay || today();
-  const hint = document.getElementById('exp-cat-hint');
-  const spentEl = document.getElementById('exp-cat-spent');
-  if(isNaN(cat) || !hint) return;
-  const existing = DB.expenses.find(e => e.cat===cat && e.date===date && !e._deleted);
-  if(existing && existing.amount > 0){
-    hint.style.display = 'block';
-    spentEl.textContent = fmt(existing.amount);
-    if(!editingExpenseId){
-      // Adding new: default to add mode
-      _addMode = true;
-      setAddModeVisual(true);
-    } else if(existing.id !== editingExpenseId){
-      // Editing but category/date changed to a different existing record: default to replace
-      _addMode = false;
-      setAddModeVisual(false);
-    }
-    // else: editing the same record — keep _addMode as-is
-  } else {
-    hint.style.display = 'none';
-  }
-}
 
 function openAddExpense(prefillCat){
   editingExpenseId = null;
-  _addMode = true;
-  document.getElementById('exp-cat-hint').style.display='none';
-  setAddModeVisual(true);
   document.getElementById('expense-modal-title').textContent='Добавить расход';
   document.getElementById('exp-delete-btn').style.display='none';
   populateCatSelect('exp-cat');
@@ -1308,8 +1245,7 @@ function openAddExpense(prefillCat){
   setMoneyInput('exp-amount','');
   document.getElementById('exp-comment').value='';
   openModal('modal-expense');
-  if(prefillCat !== undefined) setTimeout(()=>{ document.getElementById('exp-cat').value = prefillCat; updateExpCatHint(); }, 50);
-  else setTimeout(updateExpCatHint, 50);
+  if(prefillCat !== undefined) setTimeout(()=>{ document.getElementById('exp-cat').value = prefillCat; }, 50);
 }
 
 function editExpense(id, e){
@@ -1324,10 +1260,7 @@ function editExpense(id, e){
   setMoneyInput('exp-amount', exp.amount);
   document.getElementById('exp-date').value = exp.date;
   document.getElementById('exp-comment').value = exp.comment||'';
-  _addMode = true;
-  setAddModeVisual(true);
   openModal('modal-expense');
-  setTimeout(updateExpCatHint, 50);
 }
 
 function saveExpense(){
@@ -1341,30 +1274,13 @@ function saveExpense(){
     const idx = DB.expenses.findIndex(e=>e.id===editingExpenseId);
     if(idx>=0){
       const cur = DB.expenses[idx];
-      // If category or date changed — zero out the old cell in the sheet
       if(cur.cat !== cat || cur.date !== date){
-        // Mark old record as deleted so push zeroes it out in the sheet
         DB.expenses.push({...cur, amount:0, _deleted:true, id:'gs_'+cur.cat+'_'+cur.date.replace(/-/g,'')});
       }
-      const newAmt = _addMode ? Math.round((cur.amount + amt) * 100) / 100 : amt;
-      const newComment = comment
-        ? (_addMode && cur.comment ? cur.comment + '; ' + comment : comment)
-        : cur.comment;
-      DB.expenses[idx] = {...cur, cat, amount:newAmt, date, comment:newComment};
+      DB.expenses[idx] = {...cur, cat, amount: amt, date, comment};
     }
   } else {
-    const existing = DB.expenses.find(e => e.cat===cat && e.date===date && !e._deleted);
-    if(existing){
-      if(_addMode){
-        existing.amount = Math.round((existing.amount + amt) * 100) / 100;
-        if(comment) existing.comment = (existing.comment ? existing.comment + '; ' : '') + comment;
-      } else {
-        existing.amount = amt;
-        if(comment !== undefined) existing.comment = comment;
-      }
-    } else {
-      DB.expenses.push({ id:uid(), cat, amount:amt, date, comment });
-    }
+    DB.expenses.push({ id:uid(), cat, amount:amt, date, comment });
   }
   saveDB();
   closeModal('modal-expense');
@@ -1508,21 +1424,62 @@ function renderDay(){
     list.innerHTML='<div class="empty-day"><div style="font-size:32px">📭</div><p>Нет расходов за этот день</p><p>Нажмите + чтобы добавить</p></div>';
     return;
   }
-  entries.sort((a,b)=>(b.amount-a.amount));
-  entries.forEach(e=>{
-    const catName = DB.categories[e.cat]||'Неизвестно';
-    const row=document.createElement('div');
-    row.className='entry-row';
-    row.innerHTML=`
-      <div class="entry-dot" style="background:${getCatColor(e.cat)}"></div>
-      <div class="entry-info">
-        <div class="entry-cat">${catName}</div>
-        ${e.comment?`<div class="entry-note">${esc(e.comment)}</div>`:''}
-      </div>
-      <div class="entry-amount">${fmt(e.amount)}</div>
-      <button class="entry-del" onclick="editExpense('${e.id}',event)">✎</button>
-    `;
-    list.appendChild(row);
+  // Group by category
+  const catMap = new Map();
+  entries.forEach(e => {
+    if(!catMap.has(e.cat)) catMap.set(e.cat, []);
+    catMap.get(e.cat).push(e);
+  });
+  const catGroups = [...catMap.entries()]
+    .map(([cat, exps]) => ({cat, exps, total: exps.reduce((s,e)=>s+e.amount,0)}))
+    .sort((a,b) => b.total - a.total);
+
+  catGroups.forEach(({cat, exps, total: catTotal}) => {
+    const catName = DB.categories[cat]||'Неизвестно';
+    const color = getCatColor(cat);
+    const multi = exps.length > 1;
+
+    if(multi){
+      // Category header row with total
+      const header = document.createElement('div');
+      header.className = 'entry-row';
+      header.innerHTML = `
+        <div class="entry-dot" style="background:${color}"></div>
+        <div class="entry-info"><div class="entry-cat">${esc(catName)}</div></div>
+        <div class="entry-amount" style="font-weight:600">${fmt(catTotal)}</div>
+        <button class="entry-del" onclick="openAddExpense(${cat})">+</button>
+      `;
+      list.appendChild(header);
+      // Individual records indented
+      exps.sort((a,b)=>b.amount-a.amount).forEach(e => {
+        const row = document.createElement('div');
+        row.className = 'entry-row';
+        row.style.paddingLeft = '34px';
+        row.innerHTML = `
+          <div class="entry-info" style="flex:1">
+            <div class="entry-note">${e.comment ? esc(e.comment) : '<span style="color:var(--muted);font-style:italic">—</span>'}</div>
+          </div>
+          <div class="entry-amount">${fmt(e.amount)}</div>
+          <button class="entry-del" onclick="editExpense('${e.id}',event)">✎</button>
+        `;
+        list.appendChild(row);
+      });
+    } else {
+      // Single record — flat row as before
+      const e = exps[0];
+      const row = document.createElement('div');
+      row.className = 'entry-row';
+      row.innerHTML = `
+        <div class="entry-dot" style="background:${color}"></div>
+        <div class="entry-info">
+          <div class="entry-cat">${esc(catName)}</div>
+          ${e.comment?`<div class="entry-note">${esc(e.comment)}</div>`:''}
+        </div>
+        <div class="entry-amount">${fmt(e.amount)}</div>
+        <button class="entry-del" onclick="editExpense('${e.id}',event)">✎</button>
+      `;
+      list.appendChild(row);
+    }
   });
 }
 
@@ -1579,9 +1536,9 @@ function renderExpenseSearch(query){
 
 // ─── EXPENSE TEMPLATES ──────────────────────────────────────────────
 let _editingTemplateId = null;
-let _selectedTemplateColor = CAT_COLORS[0];
+let _selectedTemplateColor = TEMPLATE_COLORS[0];
 
-function _renderTemplateColorPicker(){ renderColorPicker('tmpl-color-picker', CAT_COLORS, _selectedTemplateColor, 'selectTemplateColor'); }
+function _renderTemplateColorPicker(){ renderColorPicker('tmpl-color-picker', TEMPLATE_COLORS, _selectedTemplateColor, 'selectTemplateColor'); }
 function selectTemplateColor(c){ _selectedTemplateColor=c; _renderTemplateColorPicker(); }
 
 function renderTemplateChips(){
@@ -1604,13 +1561,7 @@ function addFromTemplate(id){
   if(!t) return;
   const date = currentPage==='day' ? currentDay : today();
   const tmplNote = t.comment ? t.name + ': ' + t.comment : t.name;
-  const existing = DB.expenses.find(e=>e.cat===t.cat&&e.date===date&&!e._deleted);
-  if(existing){
-    existing.amount = Math.round((existing.amount + t.amount)*100)/100;
-    if(!existing.comment) existing.comment = tmplNote;
-  } else {
-    DB.expenses.push({id:uid(), cat:t.cat, amount:t.amount, date, comment:tmplNote});
-  }
+  DB.expenses.push({id:uid(), cat:t.cat, amount:t.amount, date, comment:tmplNote});
   saveDB();
   if(currentPage==='day') renderDay(); else renderBudget();
   toast(esc(t.name)+' добавлено');
@@ -1630,14 +1581,14 @@ function openTemplateModal(id){
     setMoneyInput('tmpl-amount', t.amount);
     document.getElementById('tmpl-comment').value = t.comment||'';
     document.getElementById('tmpl-delete-btn').style.display='block';
-    _selectedTemplateColor = t.color || CAT_COLORS[0];
+    _selectedTemplateColor = t.color || TEMPLATE_COLORS[0];
   } else {
     document.getElementById('template-modal-title').textContent='Новый шаблон';
     document.getElementById('tmpl-name').value='';
     setMoneyInput('tmpl-amount','');
     document.getElementById('tmpl-comment').value='';
     document.getElementById('tmpl-delete-btn').style.display='none';
-    _selectedTemplateColor = CAT_COLORS[0];
+    _selectedTemplateColor = TEMPLATE_COLORS[0];
   }
   _renderTemplateColorPicker();
   openModal('modal-template');
@@ -1721,13 +1672,7 @@ function denomSave(){
   if(isNaN(cat)) return;
   const comment = (document.getElementById('denom-comment').value || '').trim();
   const date = currentDay;
-  const existing = DB.expenses.find(e => e.cat === cat && e.date === date && !e._deleted);
-  if(existing){
-    existing.amount = Math.round((existing.amount + _denomAmount) * 100) / 100;
-    if(comment) existing.comment = (existing.comment ? existing.comment + '; ' : '') + comment;
-  } else {
-    DB.expenses.push({id: uid(), cat, amount: _denomAmount, date, comment});
-  }
+  DB.expenses.push({id: uid(), cat, amount: _denomAmount, date, comment});
   saveDB();
   checkBudgetNotifications();
   toast(fmt(_denomAmount) + ' добавлено');
@@ -2183,24 +2128,16 @@ function renderAssetsHistory(rows, showAll){
     btn.style.cssText = 'font-size:12px;width:100%';
     if(!showAll){
       btn.textContent = 'Показать все ' + rows.length + ' записей';
-      btn.onclick = expandAssetsHistory;
+      btn.onclick = () => renderAssetsHistory(_assetsHistoryRows, true);
     } else {
       btn.textContent = 'Скрыть ▲';
-      btn.onclick = collapseAssetsHistory;
+      btn.onclick = () => renderAssetsHistory(_assetsHistoryRows, false);
     }
     td.appendChild(btn);
   }
 }
 
 let _assetsHistoryRows = [];
-
-function expandAssetsHistory(){
-  renderAssetsHistory(_assetsHistoryRows, true);
-}
-
-function collapseAssetsHistory(){
-  renderAssetsHistory(_assetsHistoryRows, false);
-}
 
 function renderAssets(){
   const allBanks = getAllBanks();
@@ -2491,9 +2428,6 @@ function saveBankName(type, i){
   arr[i] = newName;
   // Update bankName in all assets
   DB.assets.forEach(a => { if(a.bankName === oldName) a.bankName = newName; });
-  // Store rename for sync
-  if(!DB.bankRenames) DB.bankRenames = [];
-  DB.bankRenames.push({from: oldName, to: newName, ts: Date.now()});
   saveDB();
   renderBankManager();
   renderAssets();
@@ -2543,8 +2477,6 @@ function removeBank(type, i){
   const hasHistory = (DB.assets||[]).some(a => (a.bankName || '') === bankName);
   if(hasHistory){ toast('Нельзя удалить: у банка есть история данных'); return; }
   arr.splice(i, 1);
-  if(!DB.bankDeletions) DB.bankDeletions = [];
-  DB.bankDeletions.push(bankName);
   saveDB();
   renderBankManager();
   renderAssets();
@@ -2642,22 +2574,14 @@ function deleteAssetDateConfirm(){
 // ═══ settings.js ═══
 
 // ─── RENDER: SETTINGS ───────────────────────────────────────────────
-function openSpreadsheet(){
-  const url = localStorage.getItem('spreadsheetUrl');
-  if(url) window.open(url, '_blank');
-  else toast('Сначала проверьте подключение (⚡)');
-}
-
 function renderSettings(){
   const hasSyncUrl = !!DB.syncUrl;
   document.getElementById('sync-url-display').textContent =
     hasSyncUrl ? DB.syncUrl.slice(0,40)+'…' : 'Не задан';
-  ['sync-test-row','sync-pull-row','sync-push-row','sync-last-row','sync-interval-row','sync-sheet-row'].forEach(id=>{
+  ['sync-test-row','sync-pull-row','sync-push-row','sync-last-row','sync-interval-row'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.style.display = hasSyncUrl ? 'flex' : 'none';
   });
-  const sheetRow = document.getElementById('sync-sheet-row');
-  if(sheetRow) sheetRow.style.display = (hasSyncUrl && localStorage.getItem('spreadsheetUrl')) ? 'flex' : 'none';
   const lastSync = localStorage.getItem('lastSync') || sessionStorage.getItem('lastSync');
   if(lastSync){
     const d = new Date(lastSync);
@@ -2681,6 +2605,11 @@ function renderSettings(){
   if(catCount) catCount.textContent = DB.categories.length + ' шт.';
   const tmplCount = document.getElementById('tmpl-count-display');
   if(tmplCount) tmplCount.textContent = (DB.templates||[]).length + ' шт.';
+  updateDriveBackupDate();
+  ['drive-backup-row','drive-restore-row'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.style.display = hasSyncUrl ? 'flex' : 'none';
+  });
 }
 
 // ─── CAT MANAGER ────────────────────────────────────────────────────
@@ -2931,8 +2860,6 @@ function saveCatName(i){
     if(DB.categories.includes(newName)){ toast('Такая категория уже есть'); return; }
     const oldName = DB.categories[i];
     DB.categories[i] = newName;
-    if(!DB.catRenames) DB.catRenames = [];
-    DB.catRenames.push({from: oldName, to: newName, ts: Date.now()});
   }
   saveDB();
   renderCatManager();
@@ -3004,7 +2931,9 @@ function restoreDB(input){
       if(!d.expenses && !d.categories){
         toast('Неверный формат файла'); return;
       }
+      const currentSyncUrl = localStorage.getItem('syncUrl') || sessionStorage.getItem('syncUrl') || readSyncUrlFromCookie() || '';
       Object.assign(DB, d);
+      if(currentSyncUrl) { DB.syncUrl = currentSyncUrl; saveSyncUrlEverywhere(currentSyncUrl); }
       saveDB();
       renderBudget();
       renderSettings();
@@ -3097,19 +3026,109 @@ function checkAssetNotification(){
   });
 }
 
-function exportCSV(){
-  const rows = [['id','категория','сумма','дата','комментарий']];
-  DB.expenses.filter(e => !e._deleted).forEach(e=>{
-    rows.push([e.id, DB.categories[e.cat]||'', e.amount, e.date, e.comment||'']);
+function exportExcel(){
+  if(!window.XLSX){ toast('Библиотека XLSX не загружена'); return; }
+  const X = window.XLSX;
+  const wb = X.utils.book_new();
+  const cats = DB.categories || [];
+  const MO = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+               'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+  // ── По дням YYYY ─────────────────────────────────────────────────────
+  const expByYear = {};
+  expByYear[String(new Date().getFullYear())] = [];
+  (DB.expenses||[]).filter(e => !e._deleted).forEach(e => {
+    const yr = String(e.date||'').slice(0,4);
+    if(yr.length !== 4) return;
+    (expByYear[yr] = expByYear[yr]||[]).push(e);
   });
-  const csv = rows.map(r =>
-    r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')
-  ).join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
-  a.download = 'budget_' + today() + '.csv';
-  a.click();
-  toast('CSV скачан');
+
+  Object.keys(expByYear).sort().forEach(yr => {
+    const yrNum = parseInt(yr);
+    const dates = [];
+    for(let d = new Date(yrNum,0,1); d.getFullYear()===yrNum; d.setDate(d.getDate()+1))
+      dates.push(d.toISOString().slice(0,10));
+
+    const expMap = {};
+    (expByYear[yr]||[]).forEach(e => {
+      const k = e.cat+'_'+e.date;
+      expMap[k] = (expMap[k]||0) + e.amount;
+    });
+
+    const header = ['', ...dates.map(d => d.slice(5).replace('-','.'))];
+    const itogo  = ['Итого', ...dates.map(d => {
+      let t = 0; cats.forEach((_,ci) => { t += expMap[ci+'_'+d]||0; }); return t||'';
+    })];
+    const rows = cats.map((cat,ci) => [cat, ...dates.map(d => expMap[ci+'_'+d]||'')]);
+
+    const ws = X.utils.aoa_to_sheet([header, itogo, ...rows]);
+    X.utils.book_append_sheet(wb, ws, ('По дням '+yr).slice(0,31));
+  });
+
+  // ── Шаблон ───────────────────────────────────────────────────────────
+  const limKeys = Object.keys(DB.limits||{}).sort();
+  const latestLim = limKeys.length ? (DB.limits[limKeys[limKeys.length-1]]||[]) : [];
+  const limHdr = ['Статья Расходов','Сумма/Мес','Доля Общая','Доля Лимита','Лимиты'];
+  const tmplLimTotal = latestLim.reduce((s,v) => s+(v||0), 0);
+  const tmplWs = X.utils.aoa_to_sheet([
+    limHdr,
+    ...cats.map((c,i) => [c,'','','', latestLim[i]||0]),
+    ['Итого','','','', tmplLimTotal||'']
+  ]);
+  X.utils.book_append_sheet(wb, tmplWs, 'Шаблон');
+
+  // ── Месячные листы с тратами ──────────────────────────────────────────
+  Object.entries(DB.limits||{}).sort(([a],[b]) => a.localeCompare(b)).forEach(([key,lim]) => {
+    const [yr,mo] = key.split('-').map(Number);
+
+    const catSpent = cats.map((_,ci) =>
+      (DB.expenses||[]).filter(e => !e._deleted && e.cat===ci && String(e.date||'').startsWith(key))
+        .reduce((s,e) => s+(e.amount||0), 0)
+    );
+    const totalSpent = catSpent.reduce((s,v) => s+v, 0);
+    const totalLim   = (lim||[]).reduce((s,v) => s+(v||0), 0);
+
+    const rows = cats.map((c,i) => {
+      const spent = catSpent[i]||0;
+      const limit = (lim||[])[i]||0;
+      const pctTotal = totalSpent > 0 ? Math.round(spent/totalSpent*100) : '';
+      const pctLimit = limit > 0      ? Math.round(spent/limit*100)      : '';
+      return [c, spent||'', pctTotal, pctLimit, limit||0];
+    });
+
+    const ws = X.utils.aoa_to_sheet([
+      limHdr,
+      ...rows,
+      ['Итого', totalSpent||'', '', '', totalLim||'']
+    ]);
+    X.utils.book_append_sheet(wb, ws, (MO[mo-1]+' '+yr).slice(0,31));
+  });
+
+  // ── Активы ───────────────────────────────────────────────────────────
+  const debit  = DB.banks||[];
+  const credit = DB.creditBanks||[];
+  const allB   = [...debit,...credit];
+  const byDate = {};
+  (DB.assets||[]).filter(a => !a._deleted).forEach(a => {
+    if(!a.date) return;
+    const nm = a.bankName || allB[a.bank] || '';
+    if(!nm) return;
+    (byDate[a.date] = byDate[a.date]||{})[nm] = a.amount;
+  });
+  const aDates = Object.keys(byDate).sort();
+  const aHdr   = ['Общий актив','Дата',...debit,...credit];
+  const aRows  = aDates.map(d => {
+    const row = byDate[d];
+    let total = 0;
+    debit.forEach(b  => { total += row[b]||0; });
+    credit.forEach(b => { total -= row[b]||0; });
+    return [total||'', d, ...debit.map(b => row[b]||''), ...credit.map(b => row[b]||'')];
+  });
+  const aWs = X.utils.aoa_to_sheet([aHdr,...aRows]);
+  X.utils.book_append_sheet(wb, aWs, 'Активы');
+
+  X.writeFile(wb, 'budget_'+today()+'.xlsx');
+  toast('Excel скачан');
 }
 
 function confirmClearData(){
@@ -3139,11 +3158,6 @@ function fillTestData(){
   DB.catColors   = {...DEFAULT_COLORS};
   DB.banks       = ['Сбербанк', 'Тинькофф'];
   DB.creditBanks = ['Альфа кредит'];
-  DB.catRenames  = [];
-  DB.bankRenames = [];
-  DB.bankDeletions = [];
-  DB._lastSyncedLimits = {};
-
   const prevM = m === 0 ? 11 : m - 1;
   const prevY = m === 0 ? y - 1 : y;
   DB.limits = {};
@@ -3203,6 +3217,18 @@ function fillTestData(){
     // Непредвиденные (11)
     {id:uid(), date:dAgo(20), cat:11, amount:5200, comment:'Ремонт телефона'},
     {id:uid(), date:dAgo(3),  cat:11, amount:800,  comment:'Штраф'},
+    // Сегодня: несколько трат в одной категории (для теста группировки)
+    {id:uid(), date:dAgo(0), cat:2, amount:1100, comment:'Хлеб и молоко'},
+    {id:uid(), date:dAgo(0), cat:2, amount:650,  comment:'Фрукты'},
+    {id:uid(), date:dAgo(0), cat:2, amount:2300, comment:'Мясо'},
+    {id:uid(), date:dAgo(0), cat:3, amount:280,  comment:'Американо'},
+    {id:uid(), date:dAgo(0), cat:3, amount:490,  comment:'Сэндвич'},
+    {id:uid(), date:dAgo(0), cat:4, amount:380,  comment:'Метро'},
+    // Вчера: группировка
+    {id:uid(), date:dAgo(1), cat:2, amount:1800, comment:'Перекрёсток'},
+    {id:uid(), date:dAgo(1), cat:2, amount:420,  comment:''},
+    {id:uid(), date:dAgo(1), cat:4, amount:550,  comment:'Такси домой'},
+    {id:uid(), date:dAgo(1), cat:4, amount:310,  comment:'Такси на работу'},
   ];
 
   DB.incomes = [
@@ -3247,8 +3273,6 @@ function doClearData(){
   DB.assets     = [];
   DB.incomes    = [];
   DB.limits     = {};
-  DB.catRenames = [];
-  DB.bankRenames= [];
   DB.categories  = [...DEFAULT_CATS];
   DB.catColors   = {...DEFAULT_COLORS};
   DB.banks       = [];
@@ -3264,6 +3288,56 @@ function doClearData(){
   toast('Все данные очищены');
 }
 
+
+// ─── GOOGLE DRIVE BACKUP ─────────────────────────────────────────────
+
+function updateDriveBackupDate(){
+  const el = document.getElementById('drive-backup-date');
+  if(!el) return;
+  if(!DB.lastDriveBackup){ el.textContent = 'Никогда'; return; }
+  const d = new Date(DB.lastDriveBackup + 'T12:00:00');
+  el.textContent = 'Последний: ' + d.getDate() + ' ' + SHORT_MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+async function doDriveBackup(silent){
+  if(!DB.syncUrl){ if(!silent) toast('Нужен URL синхронизации'); return; }
+  if(!silent) toast('Сохраняем на Drive…');
+  try{
+    const result = await syncRequest('driveBackup', DB);
+    if(result.error){ if(!silent) toast('Ошибка: ' + result.error); return; }
+    DB.lastDriveBackup = today();
+    saveDB();
+    updateDriveBackupDate();
+    if(!silent) toast('✓ Бэкап сохранён на Drive');
+  } catch(e){
+    if(!silent) toast('Ошибка соединения');
+  }
+}
+
+async function restoreFromDrive(){
+  if(!DB.syncUrl){ toast('Нужен URL синхронизации'); return; }
+  if(!confirm('Восстановить данные из Drive? Текущие данные будут заменены.')) return;
+  toast('Загружаем из Drive…');
+  try{
+    const resp = await fetch(DB.syncUrl + '?action=getDriveBackup');
+    const text = await resp.text();
+    const data = JSON.parse(text);
+    if(data.error){ toast('Ошибка: ' + data.error); return; }
+    Object.assign(DB, data);
+    saveDB();
+    renderBudget();
+    renderSettings();
+    toast('✓ Данные восстановлены из Drive');
+  } catch(e){
+    toast('Ошибка: файл повреждён или не найден');
+  }
+}
+
+function checkAutoDriveBackup(){
+  if(!DB.syncUrl) return;
+  if(DB.lastDriveBackup === today()) return;
+  setTimeout(() => doDriveBackup(true), 5000);
+}
 
 // ═══ sync.js ═══
 
@@ -3344,10 +3418,6 @@ async function testSync(){
   try {
     const d = await syncRequest('ping');
     el.textContent = d.ok ? '✓ Подключено' : '✗ Ошибка';
-    if(d.ok && d.spreadsheetUrl){
-      localStorage.setItem('spreadsheetUrl', d.spreadsheetUrl);
-      renderSettings();
-    }
     toast(d.ok ? 'Подключение успешно!' : 'Ошибка: '+(d.error||'?'));
   } catch(e) {
     el.textContent = '✗ Недоступно';
@@ -3355,22 +3425,14 @@ async function testSync(){
   }
 }
 
-// ── Pull — загрузить из таблицы ───────────────────────────────────────
+// ── Pull — загрузить из Drive ───────────────────────────────────────
 async function pullFromSheets(){
   if(!DB.syncUrl){ toast('URL не задан'); return; }
   setSyncStatus('syncing');
   try {
     const d = await syncRequest('pull');
     if(d.error){ setSyncStatus('error'); toast('Ошибка: '+d.error); return; }
-    const conflicts = _findConflictMonths(d.limits || {});
-    if(conflicts.length){
-      _pendingPullData = d;
-      setSyncStatus('ok', new Date().toISOString());
-      _showConflictModal(conflicts);
-      return;
-    }
     mergePullData(d);
-    DB._lastSyncedLimits = JSON.parse(JSON.stringify(DB.limits));
     DB._dirty = false;
     localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
     if(currentPage==='budget') renderBudget();
@@ -3383,37 +3445,31 @@ async function pullFromSheets(){
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
     setSyncStatus('ok', ts);
-    toast('✓ Загружено из таблицы!');
+    toast('✓ Данные загружены!');
   } catch(e) {
     setSyncStatus('error');
     toast('Ошибка загрузки: ' + e.message);
   }
 }
 
-// ── Push — выгрузить в таблицу ────────────────────────────────────────
+// ── Push — выгрузить в Drive ────────────────────────────────────────
 async function pushToSheets(){
   if(!DB.syncUrl){ toast('URL не задан'); return; }
   setSyncStatus('syncing');
   try {
-    const data = buildPayload();
-    const d = await syncRequest('push', data);
+    const d = await syncRequest('push', buildPayload());
     if(d.error){ setSyncStatus('error'); toast('Ошибка: '+d.error); return; }
     DB._dirty = false;
+    DB.expenses = DB.expenses.filter(e => !e._deleted);
     const ts = new Date().toISOString();
     localStorage.setItem('lastSync', ts);
     sessionStorage.setItem('lastSync', ts);
-    setSyncStatus('ok', ts);
-    const w = d.written || {};
-    DB.catRenames = [];
-    DB.bankRenames = [];
-    DB.bankDeletions = [];
-    // Clean up _deleted expenses — already zeroed in sheet
-    DB.expenses = DB.expenses.filter(e => !e._deleted);
     localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
-    toast('✓ Выгружено в таблицу!');
+    setSyncStatus('ok', ts);
+    toast('✓ Данные сохранены!');
   } catch(e) {
     setSyncStatus('error');
-    toast('Ошибка выгрузки: ' + e.message);
+    toast('Ошибка сохранения: ' + e.message);
   }
 }
 
@@ -3486,70 +3542,6 @@ function saveSyncInterval(val){
 }
 
 let _syncInFlight = false;
-let _pendingPullData = null;
-
-function _findConflictMonths(sheetLimits){
-  const base  = DB._lastSyncedLimits || {};
-  const local = DB.limits || {};
-  const sheet = sheetLimits || {};
-  if(!Object.keys(base).length) return [];
-  const conflicts = [];
-  const keys = new Set([...Object.keys(local), ...Object.keys(sheet)]);
-  for(const k of keys){
-    const baseArr  = base[k]  || [];
-    const localArr = local[k] || [];
-    const sheetArr = sheet[k] || [];
-    const len = Math.max(localArr.length, sheetArr.length, baseArr.length);
-    let localDiff = false, sheetDiff = false;
-    for(let i = 0; i < len; i++){
-      if((localArr[i]||0) !== (baseArr[i]||0)) localDiff = true;
-      if((sheetArr[i]||0) !== (baseArr[i]||0)) sheetDiff = true;
-    }
-    if(localDiff && sheetDiff) conflicts.push(k);
-  }
-  return conflicts;
-}
-
-function _showConflictModal(months){
-  const el = document.getElementById('sync-conflict-months');
-  if(el) el.textContent = months.map(k => {
-    const [y, m] = k.split('-');
-    return (MONTHS_RU[parseInt(m)-1] || k) + ' ' + y;
-  }).join(', ');
-  openModal('modal-sync-conflict');
-}
-
-async function resolveConflict(choice){
-  closeModal('modal-sync-conflict');
-  const d = _pendingPullData;
-  _pendingPullData = null;
-  if(!d) return;
-  setSyncStatus('syncing');
-  try{
-    if(choice === 'sheet'){
-      DB.limits = JSON.parse(JSON.stringify(d.limits || {}));
-      mergePullData({...d, limits: undefined});
-    } else {
-      const p = await syncRequest('push', buildPayload());
-      if(p && !p.error){
-        DB.catRenames = [];
-        DB.bankRenames = [];
-        DB.bankDeletions = [];
-        DB.expenses = DB.expenses.filter(e => !e._deleted);
-      }
-      mergePullData({...d, limits: undefined});
-    }
-    DB._lastSyncedLimits = JSON.parse(JSON.stringify(DB.limits));
-    DB._dirty = false;
-    localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
-    renderBudget();
-    const ts = new Date().toISOString();
-    localStorage.setItem('lastSync', ts);
-    sessionStorage.setItem('lastSync', ts);
-    setSyncStatus('ok', ts);
-    toast(choice === 'sheet' ? '✓ Загружено из таблицы' : '✓ Ваши данные сохранены');
-  } catch(e){ setSyncStatus('error'); toast('Ошибка: ' + e.message); }
-}
 
 function startAutoSync(){
   if(!DB.syncUrl || _autoSyncTimer) return;
@@ -3564,9 +3556,6 @@ function startAutoSync(){
       const d = await syncRequest('push', data);
       if(d && !d.error){
         DB._dirty = false;
-        DB.catRenames = [];
-        DB.bankRenames = [];
-        DB.bankDeletions = [];
         DB.expenses = DB.expenses.filter(e => !e._deleted);
         const ts = new Date().toISOString();
         localStorage.setItem('lastSync', ts);
@@ -3586,7 +3575,7 @@ async function loadAppsScriptCode() {
     if(r.ok) { window._APPS_SCRIPT_CODE = await r.text(); return; }
   } catch(_) {}
   // Inline fallback — обновляется при каждой сборке
-  window._APPS_SCRIPT_CODE = "// ===== BUDGET TRACKER APPS SCRIPT v9 =====\n// GET-only. action \u0438 data \u043f\u0435\u0440\u0435\u0434\u0430\u044e\u0442\u0441\u044f \u043a\u0430\u043a URL \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b.\n// \u0414\u0435\u043f\u043b\u043e\u0439: \u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u044f \u2192 Apps Script \u2192 \u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u2192 \u041d\u043e\u0432\u043e\u0435 \u0440\u0430\u0437\u0432\u0435\u0440\u0442\u044b\u0432\u0430\u043d\u0438\u0435\n// \u0422\u0438\u043f: \u0412\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 | \u0412\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u043a\u0430\u043a: \u042f | \u0414\u043e\u0441\u0442\u0443\u043f: \u0412\u0441\u0435\n\nconst SHEET_DAYS     = '\u041f\u043e \u0434\u043d\u044f\u043c'; // prefix \u2014 actual sheets: '\u041f\u043e \u0434\u043d\u044f\u043c 2026', '\u041f\u043e \u0434\u043d\u044f\u043c 2027', etc.\nconst SHEET_TEMPLATE = '\u0428\u0430\u0431\u043b\u043e\u043d';\nconst SHEET_COMMENTS = '\u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0438';\nconst SHEET_ASSETS   = '\u0410\u043a\u0442\u0438\u0432\u044b';\nconst SHEET_INCOME   = '\u0414\u043e\u0445\u043e\u0434\u044b';\nconst SHEET_COLORS   = '\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438';\nconst MONTHS_RU = ['\u042f\u043d\u0432\u0430\u0440\u044c','\u0424\u0435\u0432\u0440\u0430\u043b\u044c','\u041c\u0430\u0440\u0442','\u0410\u043f\u0440\u0435\u043b\u044c','\u041c\u0430\u0439','\u0418\u044e\u043d\u044c',\n                   '\u0418\u044e\u043b\u044c','\u0410\u0432\u0433\u0443\u0441\u0442','\u0421\u0435\u043d\u0442\u044f\u0431\u0440\u044c','\u041e\u043a\u0442\u044f\u0431\u0440\u044c','\u041d\u043e\u044f\u0431\u0440\u044c','\u0414\u0435\u043a\u0430\u0431\u0440\u044c'];\n// \u0414\u0435\u0444\u043e\u043b\u0442\u043d\u044b\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438 \u2014 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u044e\u0442\u0441\u044f \u0442\u043e\u043b\u044c\u043a\u043e \u043f\u0440\u0438 \u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0438 \u043f\u0443\u0441\u0442\u043e\u0433\u043e \u0428\u0430\u0431\u043b\u043e\u043d\u0430\nconst DEFAULT_CATS = [\n  '\u0416\u041a\u0423 + \u0430\u0440\u0435\u043d\u0434\u0430','\u0420\u0435\u043c\u043e\u043d\u0442 \u0438 \u0431\u044b\u0442',\n  '\u041f\u0440\u043e\u0434\u0443\u043a\u0442\u044b','\u041a\u0430\u0444\u0435 \u0438 \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0430',\n  '\u0422\u0440\u0430\u043d\u0441\u043f\u043e\u0440\u0442 \u0438 \u0442\u0430\u043a\u0441\u0438','\u0410\u0432\u0442\u043e',\n  '\u0410\u043f\u0442\u0435\u043a\u0430 \u0438 \u0432\u0440\u0430\u0447\u0438','\u0421\u043f\u043e\u0440\u0442',\n  '\u041e\u0434\u0435\u0436\u0434\u0430 \u0438 \u0443\u0445\u043e\u0434','\u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0438 \u0438 \u0441\u0432\u044f\u0437\u044c',\n  '\u041f\u043e\u0434\u0430\u0440\u043a\u0438','\u041d\u0435\u043f\u0440\u0435\u0434\u0432\u0438\u0434\u0435\u043d\u043d\u044b\u0435'\n];\nconst DEFAULT_LIMITS = [15000,3000, 18000,6000, 4000,5000, 3000,2000, 5000,2000, 3000,5000];\nconst DEFAULT_COLORS = {\n  '\u0416\u041a\u0423 + \u0430\u0440\u0435\u043d\u0434\u0430':'#185fa5',    '\u0420\u0435\u043c\u043e\u043d\u0442 \u0438 \u0431\u044b\u0442':'#185fa5',\n  '\u041f\u0440\u043e\u0434\u0443\u043a\u0442\u044b':'#1d9e75',         '\u041a\u0430\u0444\u0435 \u0438 \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0430':'#1d9e75',\n  '\u0422\u0440\u0430\u043d\u0441\u043f\u043e\u0440\u0442 \u0438 \u0442\u0430\u043a\u0441\u0438':'#d85a30','\u0410\u0432\u0442\u043e':'#d85a30',\n  '\u0410\u043f\u0442\u0435\u043a\u0430 \u0438 \u0432\u0440\u0430\u0447\u0438':'#8e44ad',   '\u0421\u043f\u043e\u0440\u0442':'#8e44ad',\n  '\u041e\u0434\u0435\u0436\u0434\u0430 \u0438 \u0443\u0445\u043e\u0434':'#d4537e',    '\u041f\u043e\u0434\u043f\u0438\u0441\u043a\u0438 \u0438 \u0441\u0432\u044f\u0437\u044c':'#d4537e',\n  '\u041f\u043e\u0434\u0430\u0440\u043a\u0438':'#7f8c8d',          '\u041d\u0435\u043f\u0440\u0435\u0434\u0432\u0438\u0434\u0435\u043d\u043d\u044b\u0435':'#7f8c8d'\n};\n\n// POST \u0441 Content-Type: text/plain \u2014 \u0431\u0435\u0437 CORS preflight\nfunction doPost(e) {\n  try {\n    const body = JSON.parse(e.postData.contents);\n    const action = body.action || '';\n    if (action === 'ping') return out({ ok: true, version: '9.2', spreadsheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() });\n    if (action === 'pull') return out(pullAll());\n    if (action === 'push') return out({ success: true, written: pushAll(body.data || {}) });\n    return out({ error: 'Unknown action: ' + action });\n  } catch(err) {\n    return out({ error: err.message });\n  }\n}\n\n// GET \u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u043c \u0434\u043b\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u0432\u0440\u0443\u0447\u043d\u0443\u044e \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435\nfunction doGet(e) {\n  const action = (e.parameter && e.parameter.action) || '';\n  if (action === 'ping') return out({ ok: true, version: '9.2', spreadsheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() });\n  if (action === 'pull') return out(pullAll());\n  return out({ info: 'Budget Tracker API v9.2. Use POST for push.' });\n}\n\nfunction out(obj) {\n  return ContentService.createTextOutput(JSON.stringify(obj))\n    .setMimeType(ContentService.MimeType.JSON);\n}\n\n// \u2500\u2500 HELPERS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// Timezone of the spreadsheet\nconst SS_TZ = Session.getScriptTimeZone();\n\n// Convert any cell value to YYYY-MM-DD string. Returns '' if not a date.\nfunction cellToDateStr(v) {\n  if (!v && v !== 0) return '';\n  // Already a YYYY-MM-DD string\n  if (typeof v === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(v)) return v;\n  // Date object \u2014 use Utilities.formatDate with spreadsheet timezone\n  if (v instanceof Date) return Utilities.formatDate(v, SS_TZ, 'yyyy-MM-dd');\n  // Numeric serial (Google Sheets date stored as number)\n  if (typeof v === 'number' && v > 40000) {\n    const d = new Date(Math.round((v - 25569) * 86400000));\n    return Utilities.formatDate(d, SS_TZ, 'yyyy-MM-dd');\n  }\n  return '';\n}\n\nfunction colLetter(n) {\n  let s = '';\n  while (n > 0) { s = String.fromCharCode(64 + (n-1)%26 + 1) + s; n = Math.floor((n-1)/26); }\n  return s;\n}\n\n// Read sheet header row as {name: 1-based-col}\nfunction _getColMap(sh) {\n  const h = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];\n  const m = {};\n  h.forEach((v, i) => { const n = String(v||'').trim(); if (n) m[n] = i + 1; });\n  return m;\n}\n\nfunction ensureSheet(ss, name, headers) {\n  let sh = ss.getSheetByName(name);\n  if (!sh) {\n    sh = ss.insertSheet(name);\n    if (headers && headers.length)\n      sh.getRange(1,1,1,headers.length).setValues([headers]);\n  }\n  return sh;\n}\n\nfunction monthSheetName(yr, mo) { return MONTHS_RU[mo] + ' ' + yr; }\n\nfunction daysSheetName(yr) { return SHEET_DAYS + ' ' + yr; }\n\nfunction getOrCreateDaysSheet(ss, yr) {\n  const name = daysSheetName(yr);\n  let ds = ss.getSheetByName(name);\n  if (ds) return ds;\n\n  // Create new year sheet \u2014 clone structure from any existing days sheet\n  ds = ss.insertSheet(name);\n  const dates = [''];\n  for (let d = new Date(yr,0,1); d.getFullYear()===yr; d.setDate(d.getDate()+1))\n    dates.push(new Date(d));\n  const totalCols = dates.length;\n  ds.getRange(1,1,1,totalCols).setValues([dates]);\n  ds.getRange(1,2,1,totalCols-1).setNumberFormat('dd.mm');\n\n  // \u0418\u0442\u043e\u0433\u043e row with open-ended SUM\n  ds.getRange(2,1).setValue('\u0418\u0442\u043e\u0433\u043e');\n  // \u0418\u0442\u043e\u0433\u043e \u0441\u0447\u0438\u0442\u0430\u0435\u0442\u0441\u044f \u043f\u0440\u0438 push \u2014 \u0431\u0435\u0437 \u0444\u043e\u0440\u043c\u0443\u043b, \u043d\u0435\u0442 \u043f\u0440\u043e\u0431\u043b\u0435\u043c \u0441 \u043b\u043e\u043a\u0430\u043b\u044c\u044e\n\n  // Copy categories from the most recent existing days sheet\n  const existing = ss.getSheets()\n    .filter(s => s.getName().startsWith(SHEET_DAYS + ' '))\n    .filter(s => s.getName() !== name)\n    .sort((a,b) => b.getName().localeCompare(a.getName()));\n  if (existing.length) {\n    const src = existing[0].getDataRange().getValues();\n    let row = 3;\n    for (let r = 1; r < src.length; r++) {\n      const cat = String(src[r][0]||'');\n      if (cat && cat !== '\u0418\u0442\u043e\u0433\u043e') { ds.getRange(row,1).setValue(cat); row++; }\n    }\n  }\n  return ds;\n}\n\n// \u2500\u2500 \u041f\u0415\u0420\u0412\u042b\u0419 \u0417\u0410\u041f\u0423\u0421\u041a: \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043d\u0443\u0436\u043d\u044b\u0435 \u043b\u0438\u0441\u0442\u044b \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfunction setupSheets(ss) {\n  // Template sheet \u2014 pre-filled with default categories and limits\n  if (!ss.getSheetByName(SHEET_TEMPLATE)) {\n    const t = ss.insertSheet(SHEET_TEMPLATE);\n    t.getRange(1,1,1,5).setValues([['\u0421\u0442\u0430\u0442\u044c\u044f \u0420\u0430\u0441\u0445\u043e\u0434\u043e\u0432','\u0421\u0443\u043c\u043c\u0430/\u041c\u0435\u0441','\u0414\u043e\u043b\u044f \u041e\u0431\u0449\u0430\u044f','\u0414\u043e\u043b\u044f \u041b\u0438\u043c\u0438\u0442\u0430','\u041b\u0438\u043c\u0438\u0442\u044b']]);\n    // Row 2 = \u0418\u0442\u043e\u0433\u043e (fixed, never moves)\n    t.getRange(2,1).setValue('\u0418\u0442\u043e\u0433\u043e');\n    // \u0418\u0442\u043e\u0433\u043e \u0432 \u0428\u0430\u0431\u043b\u043e\u043d\u0435 \u2014 \u043f\u0440\u043e\u0441\u0442\u043e \u043c\u0435\u0442\u043a\u0430, \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u043d\u0435 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f\n    // Rows 3+ = default categories\n    DEFAULT_CATS.forEach((cat, i) => {\n      t.getRange(i+3, 1).setValue(cat);\n      t.getRange(i+3, 5).setValue(DEFAULT_LIMITS[i] || 0);\n    });\n  }\n\n  // \u041f\u043e \u0434\u043d\u044f\u043c YYYY \u2014 migrate legacy sheet first, then create if needed\n  const curYr = new Date().getFullYear();\n  const legacyDays = ss.getSheetByName(SHEET_DAYS);\n  if (legacyDays && !ss.getSheetByName(daysSheetName(curYr))) {\n    legacyDays.setName(daysSheetName(curYr));\n  }\n  if (!ss.getSheetByName(daysSheetName(curYr))) {\n    getOrCreateDaysSheet(ss, curYr);\n  }\n  // Always ensure current month sheet exists\n  const now = new Date();\n  getOrCreateMonthSheet(ss, now.getFullYear(), now.getMonth());\n\n  ensureSheet(ss, SHEET_ASSETS, ['\u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432','\u0414\u0430\u0442\u0430']);\n\n  // Hidden service sheets\n  const incSh  = ensureSheet(ss, SHEET_INCOME,   ['id','date','source','amount','comment','month']);\n  const commSh = ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);\n  const colSh  = ensureSheet(ss, SHEET_COLORS,   ['\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f','\u0426\u0432\u0435\u0442']);\n  if (incSh.isSheetHidden()  === false) incSh.hideSheet();\n  if (commSh.isSheetHidden() === false) commSh.hideSheet();\n  if (colSh.isSheetHidden()  === false) colSh.hideSheet();\n  // Pre-fill colors sheet with defaults if empty\n  if (colSh.getLastRow() <= 1) {\n    const colorRows = DEFAULT_CATS.map(cat => [cat, DEFAULT_COLORS[cat] || '#7f8c8d']);\n    colSh.getRange(2, 1, colorRows.length, 2).setValues(colorRows);\n  }\n}\n\nfunction getOrCreateMonthSheet(ss, yr, mo) {\n  const name = monthSheetName(yr, mo);\n  let sh = ss.getSheetByName(name);\n  if (!sh) {\n    const tmpl = ss.getSheetByName(SHEET_TEMPLATE);\n    sh = tmpl.copyTo(ss);\n    sh.setName(name);\n    sh.getRange(1,6).setValue(new Date(yr, mo, 1));\n  }\n  return sh;\n}\n\n// \u2500\u2500 PULL \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfunction pullAll() {\n  const ss = SpreadsheetApp.getActiveSpreadsheet();\n  setupSheets(ss);\n\n  // Collect categories from most recent days sheet\n  const allDaysSheets = ss.getSheets()\n    .filter(s => s.getName().startsWith(SHEET_DAYS + ' '))\n    .sort((a,b) => b.getName().localeCompare(a.getName())); // newest first\n\n  // Use newest sheet for category list\n  const primarySheet = allDaysSheets[0] || ss.getSheetByName(SHEET_DAYS);\n  const primaryData = primarySheet ? primarySheet.getDataRange().getValues() : [[]];\n  const catRowMap = {};\n  const categories = [];\n  for (let r = 1; r < primaryData.length; r++) {\n    const cat = String(primaryData[r][0] || '');\n    if (cat && cat !== '\u0418\u0442\u043e\u0433\u043e') { catRowMap[cat] = r; categories.push(cat); }\n  }\n\n  // Read expenses from ALL year sheets\n  const expenseMap = {};\n  for (const daysSheet of allDaysSheets) {\n    const daysData = daysSheet.getDataRange().getValues();\n    const header = daysData[0];\n\n    const dateColMap = {};\n    for (let c = 1; c < header.length; c++) {\n      const ds = cellToDateStr(header[c]);\n      if (ds) dateColMap[ds] = c;\n    }\n\n    // Build local catRowMap for this sheet (may differ from primary)\n    const localCatRow = {};\n    for (let r = 1; r < daysData.length; r++) {\n      const cat = String(daysData[r][0] || '');\n      if (cat && cat !== '\u0418\u0442\u043e\u0433\u043e') localCatRow[cat] = r;\n    }\n\n    for (const cat of categories) {\n      const ri = localCatRow[cat];\n      if (ri === undefined) continue;\n      const ci = categories.indexOf(cat);\n      for (const [ds, col] of Object.entries(dateColMap)) {\n        const v = daysData[ri][col];\n        if (v === null || v === '' || v === undefined) continue;\n        const num = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\\d.]/g,''));\n        if (!isNaN(num) && num > 0) {\n          const key = ci + '_' + ds.replace(/-/g,'');\n          expenseMap[key] = { id:'gs_'+key, cat:ci, amount:num, date:ds, comment:'' };\n        }\n      }\n    }\n  }\n\n  // \u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0438 \u2014 \u0434\u0430\u0442\u0430 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c Date-\u043e\u0431\u044a\u0435\u043a\u0442\u043e\u043c \u0438\u043b\u0438 \u0441\u0442\u0440\u043e\u043a\u043e\u0439\n  const commSh = ss.getSheetByName(SHEET_COMMENTS);\n  if (commSh) {\n    const cd = commSh.getDataRange().getValues();\n    for (let r = 1; r < cd.length; r++) {\n      const catIdx = cd[r][0];\n      if (catIdx === '' || catIdx === null || catIdx === undefined) continue;\n      const dateStr = cellToDateStr(cd[r][1]) || String(cd[r][1]);\n      const key = catIdx + '_' + dateStr.replace(/-/g,'');\n      if (expenseMap[key] && cd[r][2]) expenseMap[key].comment = String(cd[r][2]);\n    }\n  }\n\n  // \u0414\u043e\u0445\u043e\u0434\u044b\n  const incSh = ss.getSheetByName(SHEET_INCOME);\n  const incomes = [];\n  if (incSh) {\n    const id = incSh.getDataRange().getValues();\n    for (let r = 1; r < id.length; r++) {\n      if (!id[r][0]) continue;\n      const dateStr = cellToDateStr(id[r][1]) || String(id[r][1]||'');\n      incomes.push({ id:String(id[r][0]), date:dateStr,\n        source:String(id[r][2]||''), amount:+id[r][3]||0, comment:String(id[r][4]||'') });\n    }\n  }\n\n  // \u0410\u043a\u0442\u0438\u0432\u044b \u2014 \u0444\u043e\u0440\u043c\u0430\u0442: \u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432 | \u0414\u0430\u0442\u0430 | \u0411\u0430\u043d\u043a\u0438... | \u041a\u0440\u0435\u0434\u0438\u0442\u044b...\n  const aSh = ss.getSheetByName(SHEET_ASSETS);\n  const assets = [], banks = [], creditBanks = [];\n  if (aSh) {\n    const ad = aSh.getDataRange().getValues();\n    const ah = ad[0];\n    // Col 0 = \u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432, Col 1 = \u0414\u0430\u0442\u0430, Col 2+ = banks\n    for (let c = 2; c < ah.length; c++) {\n      const name = String(ah[c]||'').trim();\n      if (!name) continue;\n      const isCred = /\u043a\u0440\u0435\u0434\u0438\u0442/i.test(name);\n      if (isCred) creditBanks.push(name); else banks.push(name);\n    }\n    const allB = [...banks, ...creditBanks];\n    for (let r = 1; r < ad.length; r++) {\n      const ds = cellToDateStr(ad[r][1]); // col index 1 = \u0414\u0430\u0442\u0430\n      if (!ds) continue;\n      for (let c = 2; c < ah.length; c++) {\n        const name = String(ah[c]||'').trim();\n        if (!name) continue;\n        const v = ad[r][c];\n        if (v===null||v===''||v===undefined) continue;\n        const num = typeof v==='number' ? v : parseFloat(String(v).replace(/[^\\d.]/g,''));\n        if (isNaN(num)) continue;\n        const bankIdx = allB.indexOf(name);\n        assets.push({ id:'gs_a_'+bankIdx+'_'+ds.replace(/-/g,''),\n          bank: bankIdx, bankName: name, amount: Math.abs(num), date: ds });\n      }\n    }\n  }\n\n  // \u041b\u0438\u043c\u0438\u0442\u044b \u0438\u0437 \u043c\u0435\u0441\u044f\u0447\u043d\u044b\u0445 \u043b\u0438\u0441\u0442\u043e\u0432\n  const tmplSh = ss.getSheetByName(SHEET_TEMPLATE);\n  const tmplLims = {};\n  if (tmplSh) {\n    const td = tmplSh.getDataRange().getValues();\n    for (let r = 1; r < td.length; r++) {\n      if (td[r][0] && String(td[r][0])!=='\u0418\u0442\u043e\u0433\u043e' && typeof td[r][4]==='number')\n        tmplLims[String(td[r][0])] = td[r][4];\n    }\n  }\n  const limits = {};\n  ss.getSheets().forEach(sh => {\n    const name = sh.getName();\n    MONTHS_RU.forEach((mon,idx) => {\n      if (!name.startsWith(mon+' ')) return;\n      const yr = parseInt(name.split(' ')[1]);\n      if (isNaN(yr)) return;\n      const key = yr+'-'+String(idx+1).padStart(2,'0');\n      const sd = sh.getDataRange().getValues();\n      const lims = {};\n      for (let r = 1; r < sd.length; r++) {\n        if (sd[r][0] && String(sd[r][0])!=='\u0418\u0442\u043e\u0433\u043e' && typeof sd[r][4]==='number')\n          lims[String(sd[r][0])] = sd[r][4];\n      }\n      limits[key] = categories.map(c => lims[c]||tmplLims[c]||0);\n    });\n  });\n  const now = new Date();\n  for (let i = 0; i < 3; i++) {\n    let m = now.getMonth()+i, y = now.getFullYear();\n    if (m>11){m-=12;y++;}\n    const k = y+'-'+String(m+1).padStart(2,'0');\n    if (!limits[k]) limits[k] = categories.map(c => tmplLims[c]||0);\n  }\n\n  // Read catColors from \u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 sheet \u2014 format: \u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f | \u0426\u0432\u0435\u0442\n  let catColors = {};\n  const colorSh = ss.getSheetByName(SHEET_COLORS);\n  if (colorSh) {\n    const cd = colorSh.getDataRange().getValues();\n    // Build catName \u2192 color map\n    const colorByCat = {};\n    for (let r = 1; r < cd.length; r++) {\n      if (cd[r][0] && cd[r][1]) colorByCat[String(cd[r][0])] = String(cd[r][1]);\n    }\n    // Convert to index-based using categories array\n    categories.forEach((cat, idx) => {\n      if (colorByCat[cat]) catColors[idx] = colorByCat[cat];\n    });\n  }\n\n  return { expenses: Object.values(expenseMap), categories, limits, assets, banks, creditBanks, incomes, catColors };\n}\n\n// \u2500\u2500 PUSH \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfunction pushAll(data) {\n  const ss = SpreadsheetApp.getActiveSpreadsheet();\n  setupSheets(ss);\n\n  const categories = data.categories || [];\n  const written = { cells:0, comments:0, incomes:0, assets:0 };\n\n  // --- 0. \u041f\u0435\u0440\u0435\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u044f \u0431\u0430\u043d\u043a\u043e\u0432 \u0432 \u043b\u0438\u0441\u0442\u0435 \u0410\u043a\u0442\u0438\u0432\u044b ---\n  const bankRenames = data.bankRenames || [];\n  if (bankRenames.length) {\n    const aSh2 = ss.getSheetByName(SHEET_ASSETS);\n    if (aSh2) {\n      const hRow = aSh2.getRange(1, 1, 1, aSh2.getLastColumn()).getValues()[0];\n      bankRenames.forEach(function(r) {\n        hRow.forEach((name, i) => {\n          if (String(name||'').trim() === r.from) {\n            aSh2.getRange(1, i+1).setValue(r.to);\n          }\n        });\n      });\n    }\n    // Also rename in color sheet if bank names are stored there (future-proof)\n  }\n\n  // --- 0b. Delete columns for removed banks ---\n  const bankDeletions = data.bankDeletions || [];\n  if (bankDeletions.length) {\n    const aShDel = ss.getSheetByName(SHEET_ASSETS);\n    if (aShDel) {\n      const delColMap = _getColMap(aShDel);\n      const colsToDel = bankDeletions.map(nm => delColMap[nm]).filter(Boolean).sort((a,b)=>b-a);\n      colsToDel.forEach(c => aShDel.deleteColumn(c));\n    }\n  }\n\n  // --- 1. \u041f\u0435\u0440\u0435\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u044f \u0438 \u043d\u043e\u0432\u044b\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438 \u2014 \u0432\u043e \u0412\u0421\u0415\u0425 \u043b\u0438\u0441\u0442\u0430\u0445 \u00ab\u041f\u043e \u0434\u043d\u044f\u043c YYYY\u00bb ---\n  const renames = data.catRenames || [];\n  const allDaysSheetsForPush = ss.getSheets()\n    .filter(s => s.getName().startsWith(SHEET_DAYS + ' '))\n    .sort((a,b) => b.getName().localeCompare(a.getName()));\n\n  // Use newest sheet as primary for category management\n  const curYrForPush = new Date().getFullYear();\n  const primaryDsSh = allDaysSheetsForPush[0] || ss.getSheetByName(daysSheetName(curYrForPush));\n\n  // Apply renames to ALL year sheets\n  if (renames.length) {\n    allDaysSheetsForPush.forEach(function(sh) {\n      const d = sh.getDataRange().getValues();\n      renames.forEach(function(r) {\n        for (let row = 1; row < d.length; row++) {\n          if (String(d[row][0]) === r.from) {\n            sh.getRange(row+1, 1).setValue(r.to);\n            d[row][0] = r.to;\n          }\n        }\n      });\n    });\n  }\n\n  // Add new categories to ALL year sheets\n  // Append category AFTER the last data row (never before \u0418\u0442\u043e\u0433\u043e on row 2)\n  // Structure: row1=header, row2=\u0418\u0442\u043e\u0433\u043e(fixed), row3..=categories\n  function ensureCatInSheet(sh, cat) {\n    const d = sh.getDataRange().getValues();\n    const existing = {};\n    for (let r = 1; r < d.length; r++) {\n      const c = String(d[r][0]||'');\n      if (c && c !== '\u0418\u0442\u043e\u0433\u043e') existing[c] = r;\n    }\n    if (existing[cat] || cat === '\u0418\u0442\u043e\u0433\u043e') return existing;\n    // Append after last row \u2014 \u0418\u0442\u043e\u0433\u043e stays on row 2, categories grow downward\n    const newRow = sh.getLastRow() + 1;\n    sh.getRange(newRow, 1).setValue(cat);\n    existing[cat] = newRow - 1;\n    return existing;\n  }\n\n  // Add new categories to all \u041f\u043e \u0434\u043d\u044f\u043c sheets AND Template\n  const catRowMap = {};\n  const tmplShForCats = ss.getSheetByName(SHEET_TEMPLATE);\n  for (const cat of categories) {\n    allDaysSheetsForPush.forEach(sh => ensureCatInSheet(sh, cat));\n    // Also ensure category exists in Template (for month sheets)\n    if (tmplShForCats) {\n      const td = tmplShForCats.getDataRange().getValues();\n      const tExists = td.some((r,i) => i>0 && String(r[0]) === cat);\n      if (!tExists) {\n        tmplShForCats.appendRow([cat, 0, 0, 0, 0]);\n      }\n    }\n  }\n  // Rebuild from primary\n  const primaryData = primaryDsSh.getDataRange().getValues();\n  for (let r = 1; r < primaryData.length; r++) {\n    const c = String(primaryData[r][0]||'');\n    if (c && c !== '\u0418\u0442\u043e\u0433\u043e') catRowMap[c] = r;\n  }\n\n  // --- 1c. \u0426\u0432\u0435\u0442\u0430 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0439 \u2192 \u043b\u0438\u0441\u0442 \"\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438\" ---\n  const catColors = data.catColors || {};\n  {\n    const colorSh = ensureSheet(ss, SHEET_COLORS, ['\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f','\u0426\u0432\u0435\u0442']);\n    const colorData = colorSh.getDataRange().getValues();\n    const colorRowMap = {};\n    for (let r = 1; r < colorData.length; r++) {\n      if (colorData[r][0]) colorRowMap[String(colorData[r][0])] = r + 1;\n    }\n    // Apply renames: update category name in color sheet too\n    renames.forEach(function(r) {\n      if (colorRowMap[r.from]) {\n        colorSh.getRange(colorRowMap[r.from], 1).setValue(r.to);\n        colorRowMap[r.to] = colorRowMap[r.from];\n        delete colorRowMap[r.from];\n      }\n    });\n    // Write each category color\n    categories.forEach((cat, idx) => {\n      const color = catColors[idx] || catColors[String(idx)] || '';\n      if (!color) return;\n      if (colorRowMap[cat]) {\n        colorSh.getRange(colorRowMap[cat], 2).setValue(color);\n      } else {\n        colorSh.appendRow([cat, color]);\n        colorRowMap[cat] = colorSh.getLastRow();\n      }\n    });\n    written.colors = Object.keys(catColors).length;\n  }\n\n  // --- 2. \u0420\u0430\u0441\u0445\u043e\u0434\u044b \u2192 \u044f\u0447\u0435\u0439\u043a\u0438 \u0432 \u043d\u0443\u0436\u043d\u044b\u0439 \u043b\u0438\u0441\u0442 \u00ab\u041f\u043e \u0434\u043d\u044f\u043c YYYY\u00bb ---\n  // Group expenses by year, write to corresponding sheet\n  const expByYear = {};\n  const commentMap = {};\n  for (const exp of (data.expenses||[])) {\n    const catName = categories[exp.cat];\n    if (!catName || !exp.date) continue;\n    const yr = exp.date.slice(0,4);\n    if (!expByYear[yr]) expByYear[yr] = [];\n    expByYear[yr].push(exp);\n    if (exp.comment && !exp._deleted) {\n      commentMap[exp.cat+'_'+exp.date] = { cat:exp.cat, date:exp.date, comment:exp.comment, catName };\n    }\n  }\n\n  for (const [yr, exps] of Object.entries(expByYear)) {\n    const yrNum = parseInt(yr);\n    const sh = getOrCreateDaysSheet(ss, yrNum);\n    const freshData = sh.getDataRange().getValues();\n    const freshHeader = freshData[0];\n    const freshCatMap = {};\n    // Find \u0418\u0442\u043e\u0433\u043e row index\n    let itogoRow = -1;\n    for (let r = 1; r < freshData.length; r++) {\n      const c = String(freshData[r][0]||'');\n      if (c === '\u0418\u0442\u043e\u0433\u043e') itogoRow = r;\n      else if (c) freshCatMap[c] = r;\n    }\n    const dateColMap = {};\n    for (let c = 1; c < freshHeader.length; c++) {\n      const ds = cellToDateStr(freshHeader[c]);\n      if (ds) dateColMap[ds] = c;\n    }\n    const cellMap = {};\n    const touchedCols = new Set(); // date columns that changed\n    for (const exp of exps) {\n      const catName = categories[exp.cat];\n      if (!catName) continue;\n      const col = dateColMap[exp.date];\n      const row = freshCatMap[catName];\n      if (col===undefined || row===undefined) continue;\n      const key = row+'_'+col;\n      cellMap[key] = (exp._deleted || exp.amount === 0) ? 0 : exp.amount;\n      touchedCols.add(col);\n    }\n    for (const [key,amount] of Object.entries(cellMap)) {\n      const [r,c] = key.split('_').map(Number);\n      sh.getRange(r+1,c+1).setValue(amount === 0 ? '' : amount);\n      written.cells++;\n    }\n    // Recalculate \u0418\u0442\u043e\u0433\u043e only for touched date columns\n    if (itogoRow >= 0 && touchedCols.size > 0) {\n      // Re-read column data after writes\n      const lastRow = sh.getLastRow();\n      touchedCols.forEach(col => {\n        const colData = sh.getRange(3, col+1, lastRow - 2, 1).getValues();\n        let total = 0;\n        colData.forEach(row => { total += parseFloat(row[0]) || 0; });\n        sh.getRange(itogoRow+1, col+1).setValue(total || '');\n      });\n    }\n  }\n\n  // --- 3. \u041a\u043e\u043c\u043c\u0435\u043d\u0442\u0430\u0440\u0438\u0438 ---\n  const commSh = ensureSheet(ss, SHEET_COMMENTS, ['catIdx','date','comment','category']);\n  const commData = commSh.getDataRange().getValues();\n  const existComm = {};\n  for (let r = 1; r < commData.length; r++) {\n    if (commData[r][0]==='' || commData[r][0]===null) continue;\n    const dv = commData[r][1];\n    const ds = dv instanceof Date ? cellToDateStr(dv) : String(dv);\n    existComm[commData[r][0]+'_'+ds] = r+1;\n  }\n  for (const [key,info] of Object.entries(commentMap)) {\n    if (existComm[key]) commSh.getRange(existComm[key],3).setValue(info.comment);\n    else { commSh.appendRow([info.cat,info.date,info.comment,info.catName]); existComm[key]=commSh.getLastRow(); }\n    written.comments++;\n  }\n\n  // --- 4. \u041b\u0438\u043c\u0438\u0442\u044b ---\n  // Helper: write categories+limits to a month/template sheet\n  function writeLimitsToSheet(sh, categories, limArr) {\n    const md = sh.getDataRange().getValues();\n    const mCatRow = {};\n    for (let r = 1; r < md.length; r++) {\n      if (md[r][0] && String(md[r][0])!=='\u0418\u0442\u043e\u0433\u043e') mCatRow[String(md[r][0])] = r+1;\n    }\n    categories.forEach((cat, idx) => {\n      const lim = limArr[idx]; if (lim === undefined) return;\n      if (mCatRow[cat]) {\n        sh.getRange(mCatRow[cat], 5).setValue(lim);\n      } else {\n        // Append new category row\n        const newRow = sh.getLastRow() + 1;\n        sh.getRange(newRow, 1).setValue(cat);\n        sh.getRange(newRow, 5).setValue(lim);\n        mCatRow[cat] = newRow;\n      }\n    });\n  }\n\n  // Update Template limits (used as default for new month sheets)\n  const tmplShForLimits = ss.getSheetByName(SHEET_TEMPLATE);\n\n  // Write limits to each month sheet\n  // Find the most recent limits entry to mirror to Template (do it once, not per month)\n  let latestLimKey = null;\n  const limitEntries = Object.entries(data.limits||{}).filter(([,v]) => Array.isArray(v));\n  limitEntries.sort((a,b) => b[0].localeCompare(a[0]));\n  if (limitEntries.length) latestLimKey = limitEntries[0][0];\n\n  limitEntries.forEach(([key,limArr]) => {\n    const [yr,mo] = key.split('-').map(Number);\n    const mSh = getOrCreateMonthSheet(ss, yr, mo-1);\n    writeLimitsToSheet(mSh, categories, limArr);\n  });\n  // Mirror only the most recent limits to Template\n  if (latestLimKey && tmplShForLimits) {\n    writeLimitsToSheet(tmplShForLimits, categories, data.limits[latestLimKey]);\n  }\n\n  // --- 5. \u0410\u043a\u0442\u0438\u0432\u044b ---\n  const regularBanks = data.banks || [];\n  const creditBanksList = data.creditBanks || [];\n  const allBanks = [...regularBanks, ...creditBanksList];\n\n  if (allBanks.length && (data.assets||[]).length) {\n    const aSh = ss.getSheetByName(SHEET_ASSETS);\n    if (!aSh) return written;\n\n    let colMap = _getColMap(aSh);\n\n    // Layout: col1=\u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432, col2=\u0414\u0430\u0442\u0430, col3..=regular, then credit\n    // Ensure base columns exist\n    if (!colMap['\u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432']) { aSh.getRange(1,1).setValue('\u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432'); colMap = _getColMap(aSh); }\n    if (!colMap['\u0414\u0430\u0442\u0430'])        { aSh.getRange(1,2).setValue('\u0414\u0430\u0442\u0430');         colMap = _getColMap(aSh); }\n\n    // Add missing regular banks: insert before the first credit column (or before last col if no credits)\n    for (const bank of regularBanks) {\n      if (colMap[bank]) continue;\n      const creditCols = creditBanksList.map(b => colMap[b]).filter(Boolean);\n      if (creditCols.length) {\n        const firstCreditCol = Math.min(...creditCols);\n        aSh.insertColumnBefore(firstCreditCol);\n        aSh.getRange(1, firstCreditCol, aSh.getLastRow(), 1).clearContent();\n        aSh.getRange(1, firstCreditCol).setValue(bank);\n      } else {\n        aSh.getRange(1, aSh.getLastColumn() + 1).setValue(bank);\n      }\n      colMap = _getColMap(aSh);\n    }\n\n    // Add missing credit banks: append after last column\n    for (const bank of creditBanksList) {\n      if (colMap[bank]) continue;\n      const newCol = aSh.getLastColumn() + 1;\n      aSh.getRange(1, newCol).setValue(bank);\n      colMap = _getColMap(aSh);\n    }\n\n    // Final column map\n    colMap = _getColMap(aSh);\n    const totalCol = colMap['\u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432'] || 1;\n    const dateCol  = colMap['\u0414\u0430\u0442\u0430'] || 2;\n\n    // Build date \u2192 row map\n    const lastRow = aSh.getLastRow();\n    const dateRowMap = {};\n    if (lastRow > 1) {\n      aSh.getRange(2, dateCol, lastRow - 1, 1).getValues().forEach((r, i) => {\n        const ds = cellToDateStr(r[0]);\n        if (ds) dateRowMap[ds] = i + 2;\n      });\n    }\n\n    // Write bank values\n    for (const a of (data.assets||[])) {\n      if (!a.date || !String(a.date).match(/^\\d{4}-\\d{2}-\\d{2}$/)) continue;\n      // Always prefer bankName (reliable) over bank index (can drift after sync)\n      const bname = a.bankName || allBanks[a.bank];\n      if (!bname) continue;\n      const col = colMap[bname];\n      if (!col) continue;\n      let row = dateRowMap[a.date];\n      if (!row) {\n        const newRow = aSh.getLastRow() + 1;\n        aSh.getRange(newRow, dateCol).setValue(a.date);\n        aSh.getRange(newRow, dateCol).setNumberFormat('@');\n        row = newRow;\n        dateRowMap[a.date] = row;\n      }\n      aSh.getRange(row, col).setValue(a.amount);\n      written.assets++;\n    }\n\n    // Recalculate \u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432 for all data rows\n    colMap = _getColMap(aSh);\n    const finalLastRow = aSh.getLastRow();\n    if (finalLastRow > 1) {\n      const allData = aSh.getRange(2, 1, finalLastRow - 1, aSh.getLastColumn()).getValues();\n      allData.forEach((rowData, i) => {\n        if (!cellToDateStr(rowData[colMap['\u0414\u0430\u0442\u0430'] - 1])) return;\n        let total = 0;\n        regularBanks.forEach(b => { const c = colMap[b]; if (c) total += parseFloat(rowData[c-1]) || 0; });\n        creditBanksList.forEach(b => { const c = colMap[b]; if (c) total -= parseFloat(rowData[c-1]) || 0; });\n        aSh.getRange(i + 2, colMap['\u041e\u0431\u0449\u0438\u0439 \u0430\u043a\u0442\u0438\u0432']).setValue(total || '');\n      });\n    }\n  }\n\n  // --- 6. \u0414\u043e\u0445\u043e\u0434\u044b ---\n  const incSh = ensureSheet(ss, SHEET_INCOME, ['id','date','source','amount','comment','month']);\n  const incData = incSh.getDataRange().getValues();\n  const existInc = {};\n  for (let r = 1; r < incData.length; r++) {\n    if (incData[r][0]) existInc[String(incData[r][0])] = r+1;\n  }\n  for (const inc of (data.incomes||[])) {\n    const incDateStr = inc.date instanceof Date ? cellToDateStr(inc.date) : String(inc.date||'');\n    if (!incDateStr) continue;\n    const row = [inc.id, incDateStr, inc.source, inc.amount, inc.comment||'', incDateStr.slice(0,7)];\n    if (existInc[inc.id]) incSh.getRange(existInc[inc.id],1,1,row.length).setValues([row]);\n    else { incSh.appendRow(row); existInc[inc.id]=incSh.getLastRow(); }\n    written.incomes++;\n  }\n\n  return written;\n}\n";
+  window._APPS_SCRIPT_CODE = "// ===== BUDGET TRACKER APPS SCRIPT v10 \u2014 Drive Storage =====\n// \u0414\u0435\u043f\u043b\u043e\u0439: \u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u044f \u2192 Apps Script \u2192 \u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u2192 \u041d\u043e\u0432\u043e\u0435 \u0440\u0430\u0437\u0432\u0435\u0440\u0442\u044b\u0432\u0430\u043d\u0438\u0435\n// \u0422\u0438\u043f: \u0412\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 | \u0412\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u043a\u0430\u043a: \u042f | \u0414\u043e\u0441\u0442\u0443\u043f: \u0412\u0441\u0435\n// \u0414\u0430\u043d\u043d\u044b\u0435 \u0445\u0440\u0430\u043d\u044f\u0442\u0441\u044f \u0432 \u0444\u0430\u0439\u043b\u0435 nto_data.json \u0432 Google Drive (\u043d\u0435 \u0432 \u0442\u0430\u0431\u043b\u0438\u0446\u0435)\n\nconst FILE_DATA   = 'nto_data.json';\nconst FILE_BACKUP = 'nto_backup.json';\n\nfunction doPost(e) {\n  try {\n    const body = JSON.parse(e.postData.contents);\n    const action = body.action || '';\n    if (action === 'ping')        return out({ ok: true, version: '10.0' });\n    if (action === 'push')        return out(saveFile(FILE_DATA, JSON.stringify(body.data || {})));\n    if (action === 'pull')        return readFile(FILE_DATA);\n    if (action === 'driveBackup') return out(saveFile(FILE_BACKUP, JSON.stringify(body.data || {})));\n    return out({ error: 'Unknown action: ' + action });\n  } catch(err) {\n    return out({ error: err.message });\n  }\n}\n\nfunction doGet(e) {\n  const action = (e.parameter && e.parameter.action) || '';\n  if (action === 'ping')           return out({ ok: true, version: '10.0' });\n  if (action === 'pull')           return readFile(FILE_DATA);\n  if (action === 'getDriveBackup') return readFile(FILE_BACKUP);\n  return out({ info: 'Budget Tracker API v10.0' });\n}\n\nfunction saveFile(name, content) {\n  try {\n    const it = DriveApp.getFilesByName(name);\n    if (it.hasNext()) it.next().setContent(content);\n    else DriveApp.createFile(name, content, MimeType.PLAIN_TEXT);\n    return { ok: true };\n  } catch(err) { return { error: err.message }; }\n}\n\nfunction readFile(name) {\n  try {\n    const it = DriveApp.getFilesByName(name);\n    if (!it.hasNext()) return out({ empty: true });\n    return ContentService.createTextOutput(it.next().getBlob().getDataAsString())\n      .setMimeType(ContentService.MimeType.JSON);\n  } catch(err) { return out({ error: err.message }); }\n}\n\nfunction out(obj) {\n  return ContentService.createTextOutput(JSON.stringify(obj))\n    .setMimeType(ContentService.MimeType.JSON);\n}\n";
 }
 
 
@@ -3835,6 +3824,7 @@ function init(){
   // Auto-sync on start if URL configured
   initSyncWidget();
   if(DB.syncUrl){ autoSyncOnStart(); startAutoSync(); }
+  checkAutoDriveBackup();
 }
 
 let _syncInProgress = false;
@@ -3849,7 +3839,6 @@ async function autoSyncOnStart(){
       const pr = await syncRequest('push', buildPayload());
       if(pr && !pr.error){
         DB._dirty = false;
-        DB.catRenames = []; DB.bankRenames = []; DB.bankDeletions = [];
         DB.expenses = DB.expenses.filter(e => !e._deleted);
         localStorage.setItem('budgetDB_v2', JSON.stringify(DB));
       }
@@ -3868,113 +3857,43 @@ async function autoSyncOnStart(){
   _syncInProgress = false;
 }
 
-function normDate(d) {
-  // Ensure date is always YYYY-MM-DD string, never a Date object or number
-  if (!d) return '';
-  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-  // If it's a Date object or ISO string, extract local date
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return String(d).slice(0,10);
-  return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-}
-
 function buildPayload(){
-  // Normalize all dates before sending to Apps Script
-  const expenses = (DB.expenses||[]).map(e => ({...e, date: normDate(e.date)}));
-  // Recompute bank index from bankName before sending — prevents index drift
-  const allBanksNow = [...(DB.banks||[]), ...(DB.creditBanks||[])];
-  const assets = (DB.assets||[]).map(a => {
-    const normalized = {...a, date: normDate(a.date)};
-    if (a.bankName) {
-      const idx = allBanksNow.indexOf(a.bankName);
-      if (idx >= 0) normalized.bank = idx;
-    }
-    return normalized;
-  });
-  const incomes  = (DB.incomes||[]).map(i => ({...i, date: normDate(i.date)}));
-  return {
-    expenses, assets, incomes,
-    categories: DB.categories,
-    catColors: DB.catColors || {},
-    catRenames: DB.catRenames || [],
-    bankRenames: DB.bankRenames || [],
-    bankDeletions: DB.bankDeletions || [],
-    banks: DB.banks,
-    creditBanks: DB.creditBanks || [],
-    limits: DB.limits
-  };
+  // Send full DB to Drive — exclude device-local fields
+  const payload = {...DB};
+  delete payload.syncUrl;
+  delete payload.notifsEnabled;
+  delete payload.notifThreshold;
+  delete payload.lastDriveBackup;
+  delete payload._dirty;
+  return payload;
 }
 
 function mergePullData(d){
-  if(d.categories && d.categories.length) DB.categories = d.categories;
-  if(d.catColors !== undefined) DB.catColors = d.catColors;
-  if(d.limits) Object.assign(DB.limits, d.limits);
+  if(!d || d.empty) return;
 
-  // Merge expenses:
-  // - Sheet entries (gs_*) always replace — sheet is source of truth
-  // - App entries that match a sheet cat+date get dropped (sheet already has them summed)
-  // - Deleted entries (_deleted) are cleaned up if sheet no longer has them
-  // - Comments preserved from app if sheet has no comment
-  if(d.expenses !== undefined){
-    // Build set of cat+date covered by sheet
-    const sheetKeys = new Set((d.expenses||[]).map(e => e.cat+'_'+e.date));
+  // ID-based arrays: union — add remote items not present locally
+  ['expenses','incomes','assets','goals','templates'].forEach(key => {
+    if(!d[key]) return;
+    const localIds = new Set((DB[key]||[]).map(e => e.id));
+    const incoming = (d[key]||[]).filter(e => e.id && !localIds.has(e.id));
+    DB[key] = [...(DB[key]||[]), ...incoming];
+  });
 
-    // Preserve comments from app entries
-    const appComments = {};
-    DB.expenses.forEach(e => { if(e.comment) appComments[e.id] = e.comment; });
+  // Structural: remote wins if it has more entries (another device added cats/banks)
+  if((d.categories||[]).length > (DB.categories||[]).length){
+    DB.categories = d.categories;
+    if(d.catColors) DB.catColors = d.catColors;
+  }
+  if((d.banks||[]).length > (DB.banks||[]).length) DB.banks = d.banks;
+  if((d.creditBanks||[]).length > (DB.creditBanks||[]).length) DB.creditBanks = d.creditBanks;
 
-    // Keep app-only entries that don't conflict with sheet data
-    // and remove _deleted entries that sheet confirms are zero
-    const keepApp = DB.expenses.filter(e => {
-      if(e._deleted) return false; // clean up deleted
-      if(e.id.startsWith('gs_')) return false; // always replace with sheet version
-      // App entry with same cat+date as sheet — drop it, sheet has the total
-      if(sheetKeys.has(e.cat+'_'+e.date)) return false;
-      return true;
+  // Limits: add remote months that don't exist locally
+  if(d.limits){
+    Object.keys(d.limits).forEach(k => {
+      if(!DB.limits[k]) DB.limits[k] = d.limits[k];
     });
-
-    // Sheet entries — normalize dates and restore comments
-    const sheetEntries = (d.expenses||[])
-      .map(e => ({...e, date: normDate(e.date), comment: e.comment || appComments[e.id] || ''}))
-      .filter(e => e.date);
-
-    DB.expenses = [...keepApp, ...sheetEntries];
   }
 
-  // Merge assets — sheet wins, preserve app-only entries
-  if(d.assets && d.assets.length){
-    const appOnly = DB.assets.filter(a => !String(a.id||'').startsWith('gs_'));
-    const allBanksForMerge = [...(d.banks||[]), ...(d.creditBanks||[])];
-    const sheetAssets = (d.assets||[]).map(a => {
-      const normalized = {...a, date: normDate(a.date)};
-      // Recompute bank index from bankName using pulled banks list
-      if (a.bankName && allBanksForMerge.length) {
-        const idx = allBanksForMerge.indexOf(a.bankName);
-        if (idx >= 0) normalized.bank = idx;
-      }
-      return normalized;
-    }).filter(a => a.date);
-    DB.assets = [...appOnly, ...sheetAssets];
-  }
-
-  // Merge incomes — sheet is source of truth, deduplicate by id
-  if(d.incomes !== undefined){
-    const sheetIds = new Set((d.incomes||[]).map(i => i.id));
-    // Keep app-only entries not yet in sheet
-    const appOnly = (DB.incomes||[]).filter(i => !sheetIds.has(i.id));
-    DB.incomes = [...appOnly, ...(d.incomes||[])];
-  }
-
-  // Merge banks — add any new banks from sheet not yet in app
-  // Skip banks pending deletion (bankDeletions queue) — they were intentionally removed
-  const pendingDeletes = new Set(DB.bankDeletions || []);
-  if(d.banks && d.banks.length){
-    d.banks.forEach(b => { if(!DB.banks.includes(b) && !pendingDeletes.has(b)) DB.banks.push(b); });
-  }
-  if(d.creditBanks && d.creditBanks.length){
-    if(!DB.creditBanks) DB.creditBanks = [];
-    d.creditBanks.forEach(b => { if(!DB.creditBanks.includes(b) && !pendingDeletes.has(b)) DB.creditBanks.push(b); });
-  }
 }
 
 loadAppsScriptCode().then(() => init());
