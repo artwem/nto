@@ -3892,10 +3892,10 @@ function mergePullData(d){
   if((d.banks||[]).length > (DB.banks||[]).length) DB.banks = d.banks;
   if((d.creditBanks||[]).length > (DB.creditBanks||[]).length) DB.creditBanks = d.creditBanks;
 
-  // Limits: add remote months that don't exist locally
+  // Limits: remote wins per month — safe because push always runs before pull
   if(d.limits){
     Object.keys(d.limits).forEach(k => {
-      if(!DB.limits[k]) DB.limits[k] = d.limits[k];
+      DB.limits[k] = d.limits[k];
     });
   }
 
