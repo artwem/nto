@@ -3319,11 +3319,16 @@ async function restoreFromDrive(){
   if(!confirm('Восстановить данные из Drive? Текущие данные будут заменены.')) return;
   toast('Загружаем из Drive…');
   try{
-    const resp = await fetch(DB.syncUrl + '?action=getDriveBackup');
+    const resp = await fetch(DB.syncUrl + '?action=getDriveBackup', { redirect: 'follow' });
     const text = await resp.text();
-    const data = JSON.parse(text);
+    let data = JSON.parse(text);
+    // Handle legacy double-encoded backup (old bug: data was pre-stringified)
+    if(typeof data === 'string') data = JSON.parse(data);
     if(data.error){ toast('Ошибка: ' + data.error); return; }
+    if(!data.expenses && !data.categories){ toast('Неверный формат бэкапа'); return; }
+    const currentSyncUrl = localStorage.getItem('syncUrl') || sessionStorage.getItem('syncUrl') || readSyncUrlFromCookie() || DB.syncUrl;
     Object.assign(DB, data);
+    if(currentSyncUrl){ DB.syncUrl = currentSyncUrl; saveSyncUrlEverywhere(currentSyncUrl); }
     saveDB();
     renderBudget();
     renderSettings();
