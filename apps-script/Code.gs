@@ -3,17 +3,15 @@
 // Тип: Веб-приложение | Выполнять как: Я | Доступ: Все
 // Данные хранятся в файле nto_data.json в Google Drive (не в таблице)
 
-const FILE_DATA   = 'nto_data.json';
-const FILE_BACKUP = 'nto_backup.json';
+const FILE_DATA = 'nto_data.json';
 
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action || '';
-    if (action === 'ping')        return out({ ok: true, version: '10.0' });
-    if (action === 'push')        return out(saveFile(FILE_DATA, JSON.stringify(body.data || {})));
-    if (action === 'pull')        return readFile(FILE_DATA);
-    if (action === 'driveBackup') return out(saveFile(FILE_BACKUP, JSON.stringify(body.data || {})));
+    if (action === 'ping') return out({ ok: true, version: '10.1' });
+    if (action === 'push') return out(saveFile(FILE_DATA, JSON.stringify(body.data || {})));
+    if (action === 'pull') return readFile(FILE_DATA);
     return out({ error: 'Unknown action: ' + action });
   } catch(err) {
     return out({ error: err.message });
@@ -22,10 +20,9 @@ function doPost(e) {
 
 function doGet(e) {
   const action = (e.parameter && e.parameter.action) || '';
-  if (action === 'ping')           return out({ ok: true, version: '10.0' });
-  if (action === 'pull')           return readFile(FILE_DATA);
-  if (action === 'getDriveBackup') return readFile(FILE_BACKUP);
-  return out({ info: 'Budget Tracker API v10.0' });
+  if (action === 'ping') return out({ ok: true, version: '10.1' });
+  if (action === 'pull') return readFile(FILE_DATA);
+  return out({ info: 'Budget Tracker API v10.1' });
 }
 
 function saveFile(name, content) {

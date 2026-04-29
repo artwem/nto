@@ -19,7 +19,7 @@
     document.head.appendChild(base);
   })();
 </script>
-<script>(function(){try{var d=JSON.parse(localStorage.getItem('budgetDB_v2')||'{}');if(d.theme==='dark')document.documentElement.classList.add('dark');else if(d.theme==='light')document.documentElement.classList.add('light');}catch(e){}})();</script>
+<script>(function(){try{var d=JSON.parse(localStorage.getItem('budgetDB_v2')||'{}');var t=d.theme;if(t&&t!=='auto')document.documentElement.classList.add(t);}catch(e){}})();</script>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
@@ -103,15 +103,15 @@ if ('serviceWorker' in navigator) {
       <button onclick="denomClear()" class="btn small icon-btn" style="font-size:20px;color:var(--muted)">×</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
-      <button onclick="denomAdd(1000)" class="denom-btn">1000</button>
-      <button onclick="denomAdd(500)"  class="denom-btn">500</button>
-      <button onclick="denomAdd(100)"  class="denom-btn">100</button>
-      <button onclick="denomAdd(50)"   class="denom-btn">50</button>
-      <button onclick="denomAdd(10)"   class="denom-btn">10</button>
-      <button onclick="denomAdd(1)"    class="denom-btn">1</button>
+      <button onclick="denomAdd(1000,this)" class="denom-btn">1000</button>
+      <button onclick="denomAdd(500,this)"  class="denom-btn">500</button>
+      <button onclick="denomAdd(100,this)"  class="denom-btn">100</button>
+      <button onclick="denomAdd(50,this)"   class="denom-btn">50</button>
+      <button onclick="denomAdd(10,this)"   class="denom-btn">10</button>
+      <button onclick="denomAdd(1,this)"    class="denom-btn">1</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <div id="denom-total" style="font-size:22px;font-weight:700;min-width:90px;letter-spacing:-0.5px">0 ₽</div>
+      <input type="text" id="denom-total" inputmode="decimal" placeholder="0" style="font-size:22px;font-weight:700;width:100px;flex-shrink:0;letter-spacing:-0.5px;border:none;border-bottom:1.5px solid var(--border2);background:transparent;color:var(--text);padding:2px 0;font-family:inherit" oninput="formatMoneyInput(this);_denomAmount=parseMoney(this.value)"/>
       <input id="denom-comment" type="text" placeholder="Комментарий" style="flex:1;padding:6px 10px;border-radius:var(--r-sm);border:0.5px solid var(--border2);background:var(--card);color:var(--text);font-size:13px;font-family:inherit"/>
       <button onclick="denomSave()" class="btn primary small" style="flex:0;white-space:nowrap">Добавить</button>
     </div>
@@ -217,10 +217,19 @@ if ('serviceWorker' in navigator) {
 <div id="page-calc" class="page">
   <div class="hdr"><h1>Калькулятор</h1><div class="hdr-sub">Вклады и накопления</div></div>
   <div style="padding:14px 16px 0;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;gap:6px">
+      <button class="cu-btn active" id="calc-mode-period" onclick="setCalcMode('period')">За период</button>
+      <button class="cu-btn" id="calc-mode-target" onclick="setCalcMode('target')">К сумме</button>
+    </div>
+    <input type="hidden" id="calc-mode" value="period"/>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="s-card" style="grid-column:1/-1">
         <div class="s-lbl">Стартовая сумма, ₽</div>
         <input type="text" id="calc-start" value="100 000" inputmode="decimal" style="margin-top:4px;border:none;padding:0;font-size:22px;font-weight:700;letter-spacing:-0.5px;background:transparent;width:100%;color:var(--text)" oninput="formatMoneyInput(this);calcUpdate()"/>
+      </div>
+      <div class="s-card" id="calc-target-card" style="grid-column:1/-1;display:none">
+        <div class="s-lbl">Целевая сумма, ₽</div>
+        <input type="text" id="calc-target" value="1 000 000" inputmode="decimal" style="margin-top:4px;border:none;padding:0;font-size:22px;font-weight:700;letter-spacing:-0.5px;background:transparent;width:100%;color:var(--text)" oninput="formatMoneyInput(this);calcUpdate()"/>
       </div>
       <div class="s-card">
         <div class="s-lbl">Пополнение/мес, ₽</div>
@@ -232,7 +241,7 @@ if ('serviceWorker' in navigator) {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="s-card">
+      <div class="s-card" id="calc-duration-card">
         <div class="s-lbl">Срок</div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
           <input type="number" id="calc-duration" value="24" inputmode="numeric" min="1" style="border:none;padding:0;font-size:20px;font-weight:700;background:transparent;width:52px;flex-shrink:0;letter-spacing:-0.5px;color:var(--text)" oninput="calcUpdate()"/>
@@ -254,7 +263,7 @@ if ('serviceWorker' in navigator) {
       </div>
     </div>
     <div class="chart-card" style="margin-top:2px">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:600;margin-bottom:10px">Итого через <span id="calc-period-lbl">24 мес</span></div>
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:600;margin-bottom:10px"><span id="calc-result-prefix">Итого через</span> <span id="calc-period-lbl">24 мес</span></div>
       <div style="font-size:32px;font-weight:700;letter-spacing:-1px;margin-bottom:14px;color:var(--text)" id="calc-total">0 ₽</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Вложено</div><div style="font-size:17px;font-weight:600;color:var(--text)" id="calc-invested">0 ₽</div></div>
@@ -348,7 +357,7 @@ if ('serviceWorker' in navigator) {
   <div class="settings-list">
     <div class="setting-row" style="cursor:default">
       <span class="setting-label">Тема</span>
-      <div id="theme-picker" style="display:flex;gap:4px"></div>
+      <select id="theme-picker" onchange="setTheme(this.value)" style="border:none;background:transparent;color:var(--muted);font-size:14px;font-weight:500;-webkit-appearance:none;appearance:none;cursor:pointer;font-family:inherit;max-width:140px"></select>
     </div>
   </div>
   <div class="spacer"></div>
@@ -367,14 +376,11 @@ if ('serviceWorker' in navigator) {
       <span class="setting-label">📥 Экспорт Excel</span>
       <span class="setting-chevron">›</span>
     </div>
-    <div class="setting-row" onclick="doDriveBackup()" id="drive-backup-row">
-      <div>
-        <div class="setting-label">☁️ Бэкап на Google Drive</div>
-        <div id="drive-backup-date" style="font-size:11px;color:var(--muted);margin-top:2px"></div>
-      </div>
+    <div class="setting-row" onclick="doDriveSave()" id="drive-save-row">
+      <span class="setting-label">☁️ Сохранить на Drive</span>
       <span class="setting-chevron">›</span>
     </div>
-    <div class="setting-row" onclick="restoreFromDrive()" id="drive-restore-row">
+    <div class="setting-row" onclick="doDriveRestore()" id="drive-restore-row">
       <span class="setting-label">☁️ Восстановить из Drive</span>
       <span class="setting-chevron">›</span>
     </div>
@@ -822,7 +828,7 @@ let DB = {
   creditBanks: [],
   limits: {},  // key: "YYYY-MM", value: array of limits per category
   syncUrl: '',
-  lastDriveBackup: ''
+  _lastSyncedLimits: {}
 };
 
 let currentMonth = {y:0,m:0};
@@ -1035,7 +1041,7 @@ function showPage(name,btn){
   document.getElementById('page-'+name).classList.add('active');
   if(btn) btn.classList.add('active');
   currentPage = name;
-  document.getElementById('fab').style.display = (name==='budget'||name==='day') ? 'flex' : 'none';
+  document.getElementById('fab').style.display = name==='budget' ? 'flex' : 'none';
   document.getElementById('fab').textContent = '+';
   if(name==='budget') renderBudget();
   if(name==='day') renderDay();
@@ -1549,14 +1555,16 @@ function renderTemplateChips(){
   wrap.style.display='flex';
   wrap.innerHTML = tmpls.map(t => {
     const color = t.color || getCatColor(t.cat);
-    return `<button onclick="addFromTemplate('${t.id}')" style="display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;border:1px solid ${color}33;background:${color}15;color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;flex:0 0 calc(33.333% - 4px);box-sizing:border-box;min-width:0;overflow:hidden">
+    return `<button onclick="addFromTemplate('${t.id}',this)" style="display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;border:1px solid ${color}33;background:${color}15;color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;flex:0 0 calc(33.333% - 4px);box-sizing:border-box;min-width:0;overflow:hidden">
       <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0"></span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(t.name)}</span><span style="color:var(--muted);font-size:11px;flex-shrink:0"> ${fmt(t.amount)}</span>
     </button>`;
   }).join('');
 }
 
-function addFromTemplate(id){
+function addFromTemplate(id,btn){
+  vibe();
+  flash(btn);
   const t = (DB.templates||[]).find(x=>x.id===id);
   if(!t) return;
   const date = currentPage==='day' ? currentDay : today();
@@ -1653,19 +1661,28 @@ function renderTemplateSettings(){
 
 let _denomAmount = 0;
 
-function denomAdd(n){
+function vibe(ms){ if(navigator.vibrate) navigator.vibrate(ms||25); }
+function flash(el){ if(!el) return; el.classList.remove('tap-flash'); void el.offsetWidth; el.classList.add('tap-flash'); el.addEventListener('animationend',()=>el.classList.remove('tap-flash'),{once:true}); }
+
+function denomAdd(n,btn){
+  vibe();
+  flash(btn);
   _denomAmount = Math.round((_denomAmount + n) * 100) / 100;
-  document.getElementById('denom-total').textContent = fmt(_denomAmount);
+  const inp = document.getElementById('denom-total');
+  inp.value = String(Math.round(_denomAmount));
+  formatMoneyInput(inp);
 }
 
 function denomClear(){
   _denomAmount = 0;
-  document.getElementById('denom-total').textContent = '0 ₽';
+  const inp = document.getElementById('denom-total');
+  if(inp){ inp.value = ''; }
   const ci = document.getElementById('denom-comment');
   if(ci) ci.value = '';
 }
 
 function denomSave(){
+  _denomAmount = parseMoney(document.getElementById('denom-total').value);
   if(_denomAmount <= 0) return;
   const catEl = document.getElementById('denom-cat');
   const cat = parseInt(catEl.value);
@@ -1820,11 +1837,11 @@ function deleteIncome(){
 // ═══ stats.js ═══
 
 // ─── THEME ──────────────────────────────────────────────────────────
+const THEMES = ['light','dark','gruvbox','sakura','hellokitty','nord','dracula','solarized'];
 function applyTheme(){
   const theme = DB.theme || 'auto';
-  document.documentElement.classList.remove('dark','light');
-  if(theme==='dark') document.documentElement.classList.add('dark');
-  else if(theme==='light') document.documentElement.classList.add('light');
+  document.documentElement.classList.remove(...THEMES);
+  if(theme !== 'auto') document.documentElement.classList.add(theme);
 }
 
 function setTheme(val){
@@ -2595,18 +2612,24 @@ function renderSettings(){
   if(themeEl){
     const cur = DB.theme || 'auto';
     themeEl.innerHTML = [
-      {v:'light',l:'Светлая'},
-      {v:'auto', l:'Авто'},
-      {v:'dark', l:'Тёмная'}
-    ].map(t=>`<button onclick="setTheme('${t.v}')" style="padding:4px 10px;font-size:12px;border-radius:6px;border:0.5px solid ${cur===t.v?'var(--blue)':'var(--border2)'};background:${cur===t.v?'var(--blue-bg)':'var(--card)'};color:${cur===t.v?'var(--blue)':'var(--muted)'};font-weight:${cur===t.v?'600':'400'};cursor:pointer;font-family:inherit">${t.l}</button>`).join('');
+      {v:'light',      l:'Светлая'},
+      {v:'auto',       l:'Авто'},
+      {v:'dark',       l:'Тёмная'},
+      {v:'gruvbox',    l:'Gruvbox'},
+      {v:'sakura',     l:'🌸 Sakura'},
+      {v:'hellokitty', l:'🎀 Hello Kitty'},
+      {v:'nord',       l:'Nord'},
+      {v:'dracula',    l:'🧛 Dracula'},
+      {v:'solarized',  l:'Solarized'},
+    ].map(t=>`<option value="${t.v}">${t.l}</option>`).join('');
+    themeEl.value = cur;
   }
   renderNotifToggle();
   const catCount = document.getElementById('cat-count-display');
   if(catCount) catCount.textContent = DB.categories.length + ' шт.';
   const tmplCount = document.getElementById('tmpl-count-display');
   if(tmplCount) tmplCount.textContent = (DB.templates||[]).length + ' шт.';
-  updateDriveBackupDate();
-  ['drive-backup-row','drive-restore-row'].forEach(id=>{
+  ['drive-save-row','drive-restore-row'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.style.display = hasSyncUrl ? 'flex' : 'none';
   });
@@ -3289,43 +3312,31 @@ function doClearData(){
 }
 
 
-// ─── GOOGLE DRIVE BACKUP ─────────────────────────────────────────────
+// ─── GOOGLE DRIVE SAVE / RESTORE ─────────────────────────────────────
 
-function updateDriveBackupDate(){
-  const el = document.getElementById('drive-backup-date');
-  if(!el) return;
-  if(!DB.lastDriveBackup){ el.textContent = 'Никогда'; return; }
-  const d = new Date(DB.lastDriveBackup + 'T12:00:00');
-  el.textContent = 'Последний: ' + d.getDate() + ' ' + SHORT_MONTHS[d.getMonth()] + ' ' + d.getFullYear();
-}
-
-async function doDriveBackup(silent){
-  if(!DB.syncUrl){ if(!silent) toast('Нужен URL синхронизации'); return; }
-  if(!silent) toast('Сохраняем на Drive…');
+async function doDriveSave(){
+  if(!DB.syncUrl){ toast('Нужен URL синхронизации'); return; }
+  toast('Сохраняем на Drive…');
   try{
-    const result = await syncRequest('driveBackup', DB);
-    if(result.error){ if(!silent) toast('Ошибка: ' + result.error); return; }
-    DB.lastDriveBackup = today();
-    saveDB();
-    updateDriveBackupDate();
-    if(!silent) toast('✓ Бэкап сохранён на Drive');
+    const result = await syncRequest('push', buildPayload());
+    if(result.error){ toast('Ошибка: ' + result.error); return; }
+    toast('✓ Данные сохранены на Drive');
   } catch(e){
-    if(!silent) toast('Ошибка соединения');
+    toast('Ошибка соединения');
   }
 }
 
-async function restoreFromDrive(){
+async function doDriveRestore(){
   if(!DB.syncUrl){ toast('Нужен URL синхронизации'); return; }
   if(!confirm('Восстановить данные из Drive? Текущие данные будут заменены.')) return;
   toast('Загружаем из Drive…');
   try{
-    const resp = await fetch(DB.syncUrl + '?action=getDriveBackup', { redirect: 'follow' });
+    const resp = await fetch(DB.syncUrl + '?action=pull', { redirect: 'follow' });
     const text = await resp.text();
     let data = JSON.parse(text);
-    // Handle legacy double-encoded backup (old bug: data was pre-stringified)
     if(typeof data === 'string') data = JSON.parse(data);
-    if(data.error){ toast('Ошибка: ' + data.error); return; }
-    if(!data.expenses && !data.categories){ toast('Неверный формат бэкапа'); return; }
+    if(data.error || data.empty){ toast('Ошибка: ' + (data.error || 'файл пуст')); return; }
+    if(!data.expenses && !data.categories){ toast('Неверный формат данных'); return; }
     const currentSyncUrl = localStorage.getItem('syncUrl') || sessionStorage.getItem('syncUrl') || readSyncUrlFromCookie() || DB.syncUrl;
     Object.assign(DB, data);
     if(currentSyncUrl){ DB.syncUrl = currentSyncUrl; saveSyncUrlEverywhere(currentSyncUrl); }
@@ -3336,12 +3347,6 @@ async function restoreFromDrive(){
   } catch(e){
     toast('Ошибка: файл повреждён или не найден');
   }
-}
-
-function checkAutoDriveBackup(){
-  if(!DB.syncUrl) return;
-  if(DB.lastDriveBackup === today()) return;
-  setTimeout(() => doDriveBackup(true), 5000);
 }
 
 // ═══ sync.js ═══
@@ -3580,7 +3585,7 @@ async function loadAppsScriptCode() {
     if(r.ok) { window._APPS_SCRIPT_CODE = await r.text(); return; }
   } catch(_) {}
   // Inline fallback — обновляется при каждой сборке
-  window._APPS_SCRIPT_CODE = "// ===== BUDGET TRACKER APPS SCRIPT v10 \u2014 Drive Storage =====\n// \u0414\u0435\u043f\u043b\u043e\u0439: \u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u044f \u2192 Apps Script \u2192 \u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u2192 \u041d\u043e\u0432\u043e\u0435 \u0440\u0430\u0437\u0432\u0435\u0440\u0442\u044b\u0432\u0430\u043d\u0438\u0435\n// \u0422\u0438\u043f: \u0412\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 | \u0412\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u043a\u0430\u043a: \u042f | \u0414\u043e\u0441\u0442\u0443\u043f: \u0412\u0441\u0435\n// \u0414\u0430\u043d\u043d\u044b\u0435 \u0445\u0440\u0430\u043d\u044f\u0442\u0441\u044f \u0432 \u0444\u0430\u0439\u043b\u0435 nto_data.json \u0432 Google Drive (\u043d\u0435 \u0432 \u0442\u0430\u0431\u043b\u0438\u0446\u0435)\n\nconst FILE_DATA   = 'nto_data.json';\nconst FILE_BACKUP = 'nto_backup.json';\n\nfunction doPost(e) {\n  try {\n    const body = JSON.parse(e.postData.contents);\n    const action = body.action || '';\n    if (action === 'ping')        return out({ ok: true, version: '10.0' });\n    if (action === 'push')        return out(saveFile(FILE_DATA, JSON.stringify(body.data || {})));\n    if (action === 'pull')        return readFile(FILE_DATA);\n    if (action === 'driveBackup') return out(saveFile(FILE_BACKUP, JSON.stringify(body.data || {})));\n    return out({ error: 'Unknown action: ' + action });\n  } catch(err) {\n    return out({ error: err.message });\n  }\n}\n\nfunction doGet(e) {\n  const action = (e.parameter && e.parameter.action) || '';\n  if (action === 'ping')           return out({ ok: true, version: '10.0' });\n  if (action === 'pull')           return readFile(FILE_DATA);\n  if (action === 'getDriveBackup') return readFile(FILE_BACKUP);\n  return out({ info: 'Budget Tracker API v10.0' });\n}\n\nfunction saveFile(name, content) {\n  try {\n    const it = DriveApp.getFilesByName(name);\n    if (it.hasNext()) it.next().setContent(content);\n    else DriveApp.createFile(name, content, MimeType.PLAIN_TEXT);\n    return { ok: true };\n  } catch(err) { return { error: err.message }; }\n}\n\nfunction readFile(name) {\n  try {\n    const it = DriveApp.getFilesByName(name);\n    if (!it.hasNext()) return out({ empty: true });\n    return ContentService.createTextOutput(it.next().getBlob().getDataAsString())\n      .setMimeType(ContentService.MimeType.JSON);\n  } catch(err) { return out({ error: err.message }); }\n}\n\nfunction out(obj) {\n  return ContentService.createTextOutput(JSON.stringify(obj))\n    .setMimeType(ContentService.MimeType.JSON);\n}\n";
+  window._APPS_SCRIPT_CODE = "// ===== BUDGET TRACKER APPS SCRIPT v10 \u2014 Drive Storage =====\n// \u0414\u0435\u043f\u043b\u043e\u0439: \u0420\u0430\u0441\u0448\u0438\u0440\u0435\u043d\u0438\u044f \u2192 Apps Script \u2192 \u0420\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u044c \u2192 \u041d\u043e\u0432\u043e\u0435 \u0440\u0430\u0437\u0432\u0435\u0440\u0442\u044b\u0432\u0430\u043d\u0438\u0435\n// \u0422\u0438\u043f: \u0412\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 | \u0412\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u043a\u0430\u043a: \u042f | \u0414\u043e\u0441\u0442\u0443\u043f: \u0412\u0441\u0435\n// \u0414\u0430\u043d\u043d\u044b\u0435 \u0445\u0440\u0430\u043d\u044f\u0442\u0441\u044f \u0432 \u0444\u0430\u0439\u043b\u0435 nto_data.json \u0432 Google Drive (\u043d\u0435 \u0432 \u0442\u0430\u0431\u043b\u0438\u0446\u0435)\n\nconst FILE_DATA = 'nto_data.json';\n\nfunction doPost(e) {\n  try {\n    const body = JSON.parse(e.postData.contents);\n    const action = body.action || '';\n    if (action === 'ping') return out({ ok: true, version: '10.1' });\n    if (action === 'push') return out(saveFile(FILE_DATA, JSON.stringify(body.data || {})));\n    if (action === 'pull') return readFile(FILE_DATA);\n    return out({ error: 'Unknown action: ' + action });\n  } catch(err) {\n    return out({ error: err.message });\n  }\n}\n\nfunction doGet(e) {\n  const action = (e.parameter && e.parameter.action) || '';\n  if (action === 'ping') return out({ ok: true, version: '10.1' });\n  if (action === 'pull') return readFile(FILE_DATA);\n  return out({ info: 'Budget Tracker API v10.1' });\n}\n\nfunction saveFile(name, content) {\n  try {\n    const it = DriveApp.getFilesByName(name);\n    if (it.hasNext()) it.next().setContent(content);\n    else DriveApp.createFile(name, content, MimeType.PLAIN_TEXT);\n    return { ok: true };\n  } catch(err) { return { error: err.message }; }\n}\n\nfunction readFile(name) {\n  try {\n    const it = DriveApp.getFilesByName(name);\n    if (!it.hasNext()) return out({ empty: true });\n    return ContentService.createTextOutput(it.next().getBlob().getDataAsString())\n      .setMimeType(ContentService.MimeType.JSON);\n  } catch(err) { return out({ error: err.message }); }\n}\n\nfunction out(obj) {\n  return ContentService.createTextOutput(JSON.stringify(obj))\n    .setMimeType(ContentService.MimeType.JSON);\n}\n";
 }
 
 
@@ -3590,9 +3595,32 @@ async function loadAppsScriptCode() {
 let chartCalc = null;
 
 
+function setCalcMode(mode){
+  document.getElementById('calc-mode').value = mode;
+  document.getElementById('calc-mode-period').classList.toggle('active', mode==='period');
+  document.getElementById('calc-mode-target').classList.toggle('active', mode==='target');
+  document.getElementById('calc-target-card').style.display   = mode==='target' ? '' : 'none';
+  document.getElementById('calc-duration-card').style.display = mode==='period' ? '' : 'none';
+  calcUpdate();
+}
+
+function _calcMonthsToTarget(start, monthly, r, cap, target){
+  if(start >= target) return 0;
+  if(monthly <= 0 && r <= 0) return -1;
+  let balance = start, inv = start, mo = 0;
+  while(balance < target && mo < 601){
+    mo++;
+    if(mo > 1){ balance += monthly; inv += monthly; }
+    if(cap==='none')       balance += inv * (r / 12);
+    else if(cap==='daily') balance *= Math.pow(1 + r/365, 30.4375);
+    else                   balance *= (1 + r/12);
+  }
+  return mo >= 601 ? -1 : mo;
+}
+
 function setCalcUnit(val, btn){
   document.getElementById('calc-unit').value = val;
-  document.querySelectorAll('.cu-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#calc-unit-btns .cu-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   calcUpdate();
 }
@@ -3604,21 +3632,56 @@ function calcUpdate(){
   const duration = parseFloat(document.getElementById('calc-duration').value) || 1;
   const unit     = document.getElementById('calc-unit').value;
   const cap      = document.getElementById('calc-cap').value;
-
-  // Convert everything to months (for loop), and days (for daily cap)
-  let months, totalDays;
-  if(unit==='years'){
-    months    = Math.max(1, Math.min(600, Math.round(duration * 12)));
-    totalDays = Math.round(duration * 365);
-  } else if(unit==='days'){
-    totalDays = Math.max(1, Math.round(duration));
-    months    = Math.max(1, Math.round(totalDays / 30.4375));
-  } else {
-    months    = Math.max(1, Math.min(600, Math.round(duration)));
-    totalDays = Math.round(months * 30.4375);
-  }
+  const mode     = document.getElementById('calc-mode').value;
 
   const r = rate / 100;
+
+  // Determine months
+  let months, totalDays;
+  if(mode === 'target'){
+    const target = parseMoney(document.getElementById('calc-target').value);
+    const res = _calcMonthsToTarget(start, monthly, r, cap, target);
+    if(res === 0){
+      document.getElementById('calc-result-prefix').textContent = 'Цель достигнута —';
+      document.getElementById('calc-period-lbl').textContent = 'уже';
+      document.getElementById('calc-total').textContent    = fmtCalc(start);
+      document.getElementById('calc-invested').textContent = fmtCalc(start);
+      document.getElementById('calc-profit').textContent   = fmtCalc(0);
+      document.getElementById('calc-yearly').textContent   = fmtCalc(0);
+      document.getElementById('calc-eff-rate').textContent = '0%';
+      if(chartCalc){ chartCalc.destroy(); chartCalc=null; }
+      document.getElementById('calc-table').innerHTML = '';
+      return;
+    }
+    if(res === -1){
+      document.getElementById('calc-result-prefix').textContent = 'Цель';
+      document.getElementById('calc-period-lbl').textContent = 'недостижима';
+      document.getElementById('calc-total').textContent    = '—';
+      document.getElementById('calc-invested').textContent = '—';
+      document.getElementById('calc-profit').textContent   = '—';
+      document.getElementById('calc-yearly').textContent   = '—';
+      document.getElementById('calc-eff-rate').textContent = '—';
+      if(chartCalc){ chartCalc.destroy(); chartCalc=null; }
+      document.getElementById('calc-table').innerHTML = '';
+      return;
+    }
+    months    = res;
+    totalDays = Math.round(months * 30.4375);
+    document.getElementById('calc-result-prefix').textContent = 'Цель достигнута через';
+  } else {
+    document.getElementById('calc-result-prefix').textContent = 'Итого через';
+    // Convert everything to months (for loop), and days (for daily cap)
+    if(unit==='years'){
+      months    = Math.max(1, Math.min(600, Math.round(duration * 12)));
+      totalDays = Math.round(duration * 365);
+    } else if(unit==='days'){
+      totalDays = Math.max(1, Math.round(duration));
+      months    = Math.max(1, Math.round(totalDays / 30.4375));
+    } else {
+      months    = Math.max(1, Math.min(600, Math.round(duration)));
+      totalDays = Math.round(months * 30.4375);
+    }
+  }
 
   // Build month-by-month schedule
   const balances  = [];  // total balance each month
@@ -3633,8 +3696,8 @@ function calcUpdate(){
 
     // Apply interest for this month
     if(cap==='none'){
-      // Simple interest: apply proportionally
-      balance += balance * (r / 12);
+      // Simple interest: interest on principal only, not on accumulated interest
+      balance += totalInvested * (r / 12);
     } else if(cap==='daily'){
       const daysInMonth = 30.4375;
       balance *= Math.pow(1 + r/365, daysInMonth);
@@ -3663,9 +3726,15 @@ function calcUpdate(){
   document.getElementById('calc-eff-rate').textContent  = effRate.toFixed(2)+'%';
   {
     let lbl;
-    if(unit==='days') lbl = totalDays+' дн';
-    else if(unit==='years') lbl = duration+' год';
-    else lbl = months<12 ? months+' мес' : (months%12===0 ? months/12+' лет' : Math.floor(months/12)+'г '+months%12+'м');
+    if(mode === 'target'){
+      lbl = months<12 ? months+' мес' : (months%12===0 ? months/12+' лет' : Math.floor(months/12)+'г '+months%12+'м');
+    } else if(unit==='days'){
+      lbl = totalDays+' дн';
+    } else if(unit==='years'){
+      lbl = duration+' год';
+    } else {
+      lbl = months<12 ? months+' мес' : (months%12===0 ? months/12+' лет' : Math.floor(months/12)+'г '+months%12+'м');
+    }
     document.getElementById('calc-period-lbl').textContent = lbl;
   }
 
@@ -3706,13 +3775,13 @@ function renderCalcTable(){
   const d = window._calcData;
   if(!d) return;
   const {balances, invested, months} = d;
-  const byMonth = document.getElementById('calc-table-month-btn') &&
-                  document.getElementById('calc-table-month-btn').classList.contains('active');
+  const btn = document.getElementById('calc-table-month-btn');
+  const byMonth = !btn || btn.classList.contains('active');
 
   const table = document.getElementById('calc-table');
   let html = '<div style="display:flex;gap:6px;padding:0 14px 10px">'
-    + '<button class="cu-btn'+(byMonth?'':' active')+'" id="calc-table-year-btn" onclick="setCalcTableView(false)">По годам</button>'
     + '<button class="cu-btn'+(byMonth?' active':'')+'" id="calc-table-month-btn" onclick="setCalcTableView(true)">По месяцам</button>'
+    + '<button class="cu-btn'+(byMonth?'':' active')+'" id="calc-table-year-btn" onclick="setCalcTableView(false)">По годам</button>'
     + '</div>';
 
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
@@ -3766,8 +3835,8 @@ function setCalcTableView(byMonth){
   const table = document.getElementById('calc-table');
 
   let html = '<div style="display:flex;gap:6px;padding:0 14px 10px">'
-    + '<button class="cu-btn'+(byMonth?'':' active')+'" id="calc-table-year-btn" onclick="setCalcTableView(false)">По годам</button>'
     + '<button class="cu-btn'+(byMonth?' active':'')+'" id="calc-table-month-btn" onclick="setCalcTableView(true)">По месяцам</button>'
+    + '<button class="cu-btn'+(byMonth?'':' active')+'" id="calc-table-year-btn" onclick="setCalcTableView(false)">По годам</button>'
     + '</div>';
 
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
@@ -3829,7 +3898,6 @@ function init(){
   // Auto-sync on start if URL configured
   initSyncWidget();
   if(DB.syncUrl){ autoSyncOnStart(); startAutoSync(); }
-  checkAutoDriveBackup();
 }
 
 let _syncInProgress = false;
@@ -3868,7 +3936,6 @@ function buildPayload(){
   delete payload.syncUrl;
   delete payload.notifsEnabled;
   delete payload.notifThreshold;
-  delete payload.lastDriveBackup;
   delete payload._dirty;
   return payload;
 }
