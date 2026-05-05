@@ -163,6 +163,13 @@ if ('serviceWorker' in navigator) {
   </div>
   <div class="chart-wrap">
     <div class="chart-card">
+      <div class="chart-title">День за днём — <span id="day-compare-title"></span></div>
+      <div style="position:relative;height:190px"><canvas id="chartDayCompare"></canvas></div>
+      <div id="day-compare-summary" style="margin-top:10px"></div>
+    </div>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-card">
       <div class="chart-title">Структура — <span id="pie-month-label"></span></div>
       <div id="chartPie" style="padding:4px 0"></div>
     </div>
@@ -1892,7 +1899,127 @@ function renderStats(){
     }
   });
 
-  // ── 2. Структура текущего месяца ───────────────────────────────────
+  // ── 2. День за днём vs прошлый месяц ──────────────────────────────
+  {
+    const dn = new Date();
+    const cY = dn.getFullYear(), cM = dn.getMonth(), cD = dn.getDate();
+    let pM = cM - 1, pY = cY;
+    if(pM < 0){ pM = 11; pY--; }
+
+    const curExpsAll = getMonthExpenses(cY, cM);
+    const prevExpsAll = getMonthExpenses(pY, pM);
+
+    function cumByDay(exps, y2, m2, maxDay){
+      const mk2 = monthKey(y2, m2);
+      let acc = 0;
+      return Array.from({length: maxDay}, (_, i) => {
+        const ds = mk2 + '-' + String(i+1).padStart(2,'0');
+        acc += exps.filter(e => e.date === ds).reduce((s,e) => s+e.amount, 0);
+        return Math.round(acc);
+      });
+    }
+
+    const curCum = cumByDay(curExpsAll, cY, cM, cD);
+    const prevCum = cumByDay(prevExpsAll, pY, pM, cD);
+    const curTotal = curCum[cD-1] || 0;
+    const prevTotal = prevCum[cD-1] || 0;
+    const diff = curTotal - prevTotal;
+    const diffPct = prevTotal > 0 ? Math.round(diff / prevTotal * 100) : null;
+
+    // Historical avg (last 6 prev months) up to same day
+    const histTotals = [];
+    for(let i = 1; i <= 6; i++){
+      let hm = cM - i, hy = cY;
+      if(hm < 0){ hm += 12; hy--; }
+      const daysInHm = new Date(hy, hm+1, 0).getDate();
+      if(cD <= daysInHm){
+        const hExps = getMonthExpenses(hy, hm);
+        const mk3 = monthKey(hy, hm);
+        let hcum = 0;
+        for(let d = 1; d <= cD; d++){
+          const ds = mk3 + '-' + String(d).padStart(2,'0');
+          hcum += hExps.filter(e => e.date === ds).reduce((s,e) => s+e.amount, 0);
+        }
+        if(hcum > 0) histTotals.push(Math.round(hcum));
+      }
+    }
+    const avgHist = histTotals.length ? Math.round(histTotals.reduce((s,v) => s+v, 0) / histTotals.length) : null;
+    const vsAvgDiff = avgHist ? curTotal - avgHist : null;
+    const vsAvgPct  = avgHist && avgHist > 0 ? Math.round(vsAvgDiff / avgHist * 100) : null;
+
+    // Title
+    document.getElementById('day-compare-title').textContent =
+      SHORT_MONTHS[pM] + ' vs ' + SHORT_MONTHS[cM];
+
+    // Chart
+    const dayLabels = Array.from({length: cD}, (_, i) => i+1 === cD ? String(i+1)+'✦' : String(i+1));
+    if(charts.dayCompare) charts.dayCompare.destroy();
+    charts.dayCompare = new Chart(document.getElementById('chartDayCompare'), {
+      type: 'line',
+      data: {
+        labels: dayLabels,
+        datasets: [
+          {
+            label: SHORT_MONTHS[pM],
+            data: prevCum,
+            borderColor: 'rgba(128,128,128,0.5)',
+            backgroundColor: 'rgba(128,128,128,0.04)',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: false
+          },
+          {
+            label: SHORT_MONTHS[cM],
+            data: curCum,
+            borderColor: '#185fa5',
+            backgroundColor: 'rgba(24,95,165,0.07)',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: true
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: '#888', font: { size: 10 }, boxWidth: 10, padding: 8 } },
+          tooltip: { callbacks: { label: v => v.dataset.label + ': ' + fmt(v.raw) } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#888', maxTicksLimit: 10 } },
+          y: { grid: { color: 'rgba(128,128,128,.1)' }, ticks: { callback: v => fmtShort(v)+'₽', font: { size: 9 }, color: '#888' } }
+        }
+      }
+    });
+
+    // Summary
+    const sumEl = document.getElementById('day-compare-summary');
+    const diffColor = diff <= 0 ? '#1d9e75' : '#d85a30';
+    const diffSign  = diff >= 0 ? '+' : '';
+    const diffPctStr = diffPct !== null ? ' (' + diffSign + diffPct + '%)' : '';
+    let html = `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#888;padding:2px 0 6px">`;
+    html += `<span>${SHORT_MONTHS[pM]}: <b style="color:var(--text)">${fmt(prevTotal)}</b></span>`;
+    html += `<span>${SHORT_MONTHS[cM]}: <b style="color:var(--text)">${fmt(curTotal)}</b></span>`;
+    if(prevTotal > 0){
+      html += `<span style="color:${diffColor};font-weight:600">${diffSign}${fmt(diff)}${diffPctStr}</span>`;
+    }
+    html += `</div>`;
+    if(avgHist && vsAvgDiff !== null){
+      const vsColor = vsAvgDiff <= 0 ? '#1d9e75' : '#d85a30';
+      const vsSign  = vsAvgDiff >= 0 ? '+' : '';
+      const vsPctStr = vsAvgPct !== null ? ' (' + vsSign + vsAvgPct + '%)' : '';
+      const vsLabel = vsAvgDiff <= 0 ? 'Экономнее обычного' : 'Больше обычного';
+      html += `<div style="font-size:11px;color:#888;border-top:0.5px solid var(--border);padding-top:6px">`;
+      html += `Среднее за ${histTotals.length} мес. к этому дню: <b style="color:var(--text)">${fmt(avgHist)}</b> — `;
+      html += `<span style="color:${vsColor};font-weight:600">${vsLabel} на ${fmt(Math.abs(vsAvgDiff))}${vsPctStr}</span>`;
+      html += `</div>`;
+    }
+    sumEl.innerHTML = html;
+  }
+
+  // ── 3. Структура текущего месяца ───────────────────────────────────
   const {y,m} = currentMonth;
   const curExp = getMonthExpenses(y,m);
   const catTotals = DB.categories.map((_,i)=>curExp.filter(e=>e.cat===i).reduce((s,e)=>s+e.amount,0));
@@ -1938,7 +2065,7 @@ function renderStats(){
     });
   }
 
-  // ── 3. Доходы vs Расходы ───────────────────────────────────────────
+  // ── 4. Доходы vs Расходы ───────────────────────────────────────────
   if(charts.incVsExp) charts.incVsExp.destroy();
   charts.incVsExp = new Chart(document.getElementById('chartIncomeVsExp'),{
     type:'bar',
@@ -1975,7 +2102,7 @@ function renderStats(){
     }
   });
 
-  // ── 4. Расходы по группам (stacked) ───────────────────────────────
+  // ── 5. Расходы по группам (stacked) ───────────────────────────────
   // Build color groups — same color = same group
   const colorGroups = {};
   DB.categories.forEach((_,i)=>{
@@ -2009,7 +2136,7 @@ function renderStats(){
     };
   }).filter(ds=>ds.data.some(v=>v>0)); // skip empty groups
 
-  // ── 5. Норма накопления ────────────────────────────────────────────
+  // ── 6. Норма накопления ────────────────────────────────────────────
   const savingsRates = last6.map(x=>x.totalInc>0 ? Math.round((x.totalInc-x.totalExp)/x.totalInc*100) : null);
   const validRates = savingsRates.filter(v=>v!==null);
   const avgRate = validRates.length ? Math.round(validRates.reduce((s,v)=>s+v,0)/validRates.length) : null;
